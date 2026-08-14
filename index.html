@@ -435,7 +435,7 @@
   <section id="sec-map">
     <div class="eyebrow">Geo</div>
     <h2 class="sec-title">城市分布地图</h2>
-    <p class="sec-sub">所选月份各城市的订单与应收分布，以 <b>平面柱状图</b> 展示：柱高 = 所选指标（订单数 / 应收 GMV），颜色深浅 = 应收 GMV；柱顶直接标注「城市 · 订单数 · 应收」，悬停看明细。基于城市名自动定位，无需坐标列；未识别城市自动回退到所属省份中心。</p>
+    <p class="sec-sub">所选月份各城市的订单与应收分布，复用参考项目展示方式：<b>平面地图 + 矩形柱状</b>展示。柱高 = 所选指标（订单数 / 应收 GMV），颜色按应收 GMV 由浅到深（灰→蓝→绿→橙）；柱顶标注「城市 · 订单数 · 应收」，悬停看明细。基于城市名自动定位，无需坐标列；未识别城市自动回退到所属省份中心。</p>
     <div class="cards">
       <div class="chart-card full">
         <div class="map-head">
@@ -458,7 +458,7 @@
         </div>
         <div class="legend">
           <span>柱高 = 所选指标</span>
-          <span><i style="display:inline-block;width:14px;height:11px;background:linear-gradient(90deg,#b7e4e3,#0EA5A4);vertical-align:middle"></i> 颜色越深 = 应收 GMV 越高</span>
+          <span>颜色（灰→蓝→绿→橙）= 应收 GMV 由低到高</span>
           <span id="mapCityCount"></span>
         </div>
         <div class="map-dist" id="mapDist"></div>
@@ -705,24 +705,14 @@ function _bar3d(x,y,w,h,color){
        + `<path d="M${x0} ${yt} L${x1} ${yt} L${x2} ${yt2} L${x3} ${yt2} Z" fill="${top}" stroke="${ln}" stroke-width="0.5"/>`
        + `<path d="M${x0} ${yb} L${x1} ${yb} L${x1} ${yt} L${x0} ${yt} Z" fill="${color}" stroke="${ln}" stroke-width="0.5"/>`;
 }
-/* ---------- 城市分布地图（ECharts geo 2D + custom 柱状，矢量可缩放，零栅格图片） ---------- */
+/* ---------- 城市分布地图：复用参考项目（短租平台经营分析）展示方式 ---------- */
+/* geo 2D 平面地图 + scatter 矩形柱状（向上生长成柱）+ visualMap 按应收 GMV 着色（灰→蓝→绿→橙），矢量可缩放，零栅格图片 */
 function _cityCoord(city){ const C=window.CHINA_CITIES||{coord:{},prov:{},cityProv:{}}; let co=C.coord[city]; if(!co&&C.cityProv[city]) co=C.prov[C.cityProv[city]]; return co||null; }
-function _mapColor(t){ t=Math.max(0,Math.min(1,t)); const c1=[183,228,227],c2=[14,165,164]; return `rgb(${Math.round(c1[0]+(c2[0]-c1[0])*t)},${Math.round(c1[1]+(c2[1]-c1[1])*t)},${Math.round(c1[2]+(c2[2]-c1[2])*t)})`; }
-let _mapInst=null, _mapMaxV=1;
-/* 平面地图：geo(2D) + custom 系列，在每个城市坐标上画竖直柱状矩形 + 数据标签「城市 N单·¥GMV」 */
-function _mapRenderItem(params, api){
-  const lng=api.value(0), lat=api.value(1), v=api.value(2);
-  const pt=api.coord([lng,lat]);
-  if(!pt||isNaN(pt[0])||isNaN(pt[1])) return;
-  const d=params.data||{};
-  const h=Math.max(4,(v/_mapMaxV)*46), w=9, x=pt[0], y=pt[1];
-  const color=(d.itemStyle&&d.itemStyle.color)||'#0EA5A4';
-  const label=(d.name?d.name+' ':'')+(d.orders!=null? d.orders+'单·'+fmtMoney(d.gmv):'');
-  return { type:'group', children:[
-    { type:'rect', shape:{x:x-w/2, y:y-h, width:w, height:h}, style:{fill:color, opacity:0.95, stroke:'#0f2231', lineWidth:0.5} },
-    { type:'text', style:{text:label, x:x, y:y-h-4, textAlign:'center', textVerticalAlign:'bottom', fill:'#0f2231', font:'700 10.5px sans-serif'} }
-  ]};
-}
+/* 紧凑金额：≥1万显示「x.x万」，否则千分位整数（与参考项目一致） */
+function fmtMoneyShort(v){ if(v>=10000) return (v/10000).toFixed(1)+'万'; return Math.round(v||0).toLocaleString(); }
+let _mapInst=null, _mapMetric='orders';
+/* 柱高（像素）随指标开方增长，与参考项目算法一致 */
+function _mapBarH(q){ return 6 + Math.sqrt(Math.max(q,1)) * 5; }
 function initMapChart(){
   if(_mapInst) return;
   const el=document.getElementById('mapChart');
@@ -731,12 +721,23 @@ function initMapChart(){
   echarts.registerMap('china', window.CHINA_GEO);
   _mapInst=echarts.init(el,null,{renderer:'canvas'});
   _mapInst.setOption({
-    tooltip:{ trigger:'item', confine:true, formatter:p=>{ const d=p.data; if(!d||!d.orders) return (p.name||(d&&d.name)||''); return '<b>'+(d.name||'')+'</b><br/>订单：'+d.orders+' 单<br/>应收：'+fmtMoney(d.gmv); } },
-    geo:{ map:'china', roam:true, zoom:1.2, center:[104,36], scaleLimit:{min:1,max:12},
-      itemStyle:{ areaColor:'#eef3f2', borderColor:'#cbd5e1', borderWidth:0.8 },
-      emphasis:{ itemStyle:{ areaColor:'#d6ece9' }, label:{show:false} },
+    tooltip:{ trigger:'item', confine:true, formatter:p=>{ const v=p.value; if(!v||v.length<4) return (p.name||''); return '<b>'+(p.name||'')+'</b><br/>订单：'+v[2]+' 单<br/>应收：'+fmtMoney(v[3]); } },
+    visualMap:{ show:true, min:0, max:1, dimension:3, seriesIndex:0,
+      inRange:{ color:['#94a3b8','#3B82F6','#069669','#F97216'] },
+      text:['高 GMV','低 GMV'], left:24, bottom:24, textStyle:{color:'#475569'}, calculable:true },
+    geo:{ map:'china', roam:true, scaleLimit:{min:1,max:8},
+      itemStyle:{ areaColor:'#f1f5f9', borderColor:'#cbd5e1', borderWidth:0.8 },
+      emphasis:{ itemStyle:{ areaColor:'#e2e8f0' }, label:{show:false} },
       label:{show:false} },
-    series:[{ type:'custom', coordinateSystem:'geo', renderItem:_mapRenderItem, data:[], z:10 }]
+    series:[{ type:'scatter', coordinateSystem:'geo', data:[],
+      symbol:'rect',
+      symbolSize:function(val,params){ const v=params.data&&params.data.value; const q=_mapMetric==='gmv'?(v?v[3]:1):(v?v[2]:1); return [12,_mapBarH(q)]; },
+      symbolOffset:function(val,params){ const v=params.data&&params.data.value; const q=_mapMetric==='gmv'?(v?v[3]:1):(v?v[2]:1); return [0,-_mapBarH(q)/2]; },
+      itemStyle:{ opacity:0.95, borderColor:'#ffffff', borderWidth:0.6 },
+      label:{ show:true, position:'top',
+        formatter:function(p){ const v=p.value; return (p.name||'')+'\n'+(v?v[2]:0)+' 单 · ¥'+fmtMoneyShort(v?v[3]:0); },
+        textStyle:{ color:'#0f172a', fontSize:11, backgroundColor:'rgba(255,255,255,0.75)', padding:[2,5], borderRadius:3 } },
+      emphasis:{ label:{show:true} }, z:10 }]
   });
   el.addEventListener('dblclick',_mapReset);
   window.addEventListener('resize',()=>{ _mapInst&&_mapInst.resize(); });
@@ -744,14 +745,13 @@ function initMapChart(){
 function renderMap(cityAgg, metric){
   initMapChart();
   if(!_mapInst) return;
-  const maxGmv=Math.max(1,...cityAgg.map(c=>c.gmv));
-  _mapMaxV=Math.max(1,...cityAgg.map(c=> metric==='gmv'? c.gmv : c.orders));
+  _mapMetric=metric;
+  const minGmv=Math.min(0,...cityAgg.map(c=>c.gmv)), maxGmv=Math.max(1,...cityAgg.map(c=>c.gmv));
   const data=cityAgg.map(c=>{
     const co=_cityCoord(c.city); if(!co) return null;
-    const v = metric==='gmv'? c.gmv : c.orders;
-    return { name:c.city, value:[co[0],co[1],v], orders:c.orders, gmv:c.gmv, itemStyle:{color:_mapColor(Math.sqrt(c.gmv/maxGmv))} };
+    return { name:c.city, value:[co[0],co[1],c.orders,c.gmv] };
   }).filter(Boolean);
-  _mapInst.setOption({ series:[{ data }] });
+  _mapInst.setOption({ visualMap:{min:minGmv,max:maxGmv}, series:[{data}] });
 }
 /* 城市分布榜：订单数 TOP / 应收 GMV TOP */
 function renderMapDist(cityAgg){
@@ -1098,7 +1098,7 @@ function _mapZoom(factor){
 }
 function _mapReset(){
   if(!_mapInst) return;
-  _mapInst.setOption({geo:[{zoom:1.2, center:[104,36]}]});
+  _mapInst.setOption({geo:[{zoom:1, center:[104,35]}]});
 }
 document.getElementById('mapZoomIn').addEventListener('click',()=>_mapZoom(1.3));
 document.getElementById('mapZoomOut').addEventListener('click',()=>_mapZoom(1/1.3));
