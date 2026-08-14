@@ -6,6 +6,8 @@
 <title>销售经营分析平台</title>
 <script src="./xlsx.full.min.js"></script>
 <script src="./china-geo.js"></script>
+<script src="./echarts.min.js"></script>
+<script src="./echarts-gl.min.js"></script>
 <style>
   :root{
     /* 三色品牌体系：绿=增长/完成，橙=提示/对比，青=主品牌 */
@@ -97,8 +99,8 @@
   .map-viewport{ position:relative; width:100%; overflow:hidden; border-radius:14px; background:#f8faf9;
     cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
   .map-viewport:active{ cursor:grabbing; }
-  .map-viewport svg{ display:block; }
-  #mapChart{} /* 缩放通过 SVG viewBox 矢量重投影实现，放大永不模糊 */
+  .map-viewport canvas{ display:block; }
+  #mapChart{ width:100%; height:560px; }
   .map-ctrl{ position:absolute; top:10px; right:10px; display:flex; flex-direction:column; gap:6px; z-index:5; }
   .map-ctrl button{ width:34px; height:34px; border:none; border-radius:9px; background:rgba(255,255,255,.92);
     color:#0f2231; font-size:19px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(15,34,49,.18);
@@ -453,7 +455,7 @@
             <button id="mapZoomOut" title="缩小" aria-label="缩小">－</button>
             <button id="mapZoomReset" title="复位" aria-label="复位视图">⟳</button>
           </div>
-          <div class="map-hint">滚轮缩放 · 拖拽平移 · 双击复位</div>
+          <div class="map-hint">滚轮缩放 · 左键拖拽平移 · 右键旋转 · 双击复位</div>
         </div>
         <div class="legend">
           <span>柱高 = 所选指标</span>
@@ -699,38 +701,43 @@ function _bar3d(x,y,w,h,color){
        + `<path d="M${x0} ${yt} L${x1} ${yt} L${x2} ${yt2} L${x3} ${yt2} Z" fill="${top}" stroke="${ln}" stroke-width="0.5"/>`
        + `<path d="M${x0} ${yb} L${x1} ${yb} L${x1} ${yt} L${x0} ${yt} Z" fill="${color}" stroke="${ln}" stroke-width="0.5"/>`;
 }
-function svgChinaMap(cityAgg,W,H,metric){
-  if(!(window.CHINA_GEO&&window.CHINA_GEO.features&&window.CHINA_GEO.features.length))
-    return '<div style="padding:30px;text-align:center;color:#94a3b8">地图底图未加载（需 china-geo.js 同目录）。城市数据仍可在上方明细表中查看。</div>';
-  const pad=16, C=window.CHINA_CITIES||{coord:{},prov:{},cityProv:{}};
-  const prov=_provincePaths(W,H,pad);
-  const maxO=Math.max(1,...cityAgg.map(c=>c.orders));
-  const maxG=Math.max(1,...cityAgg.map(c=>c.gmv));
-  const placed=cityAgg.map(c=>{
-    let co=C.coord[c.city]; if(!co&&C.cityProv[c.city]) co=C.prov[C.cityProv[c.city]];
-    return co?{c,co}:null;
+/* ---------- 城市分布地图（ECharts geo3D + bar3D，矢量可缩放，零栅格图片） ---------- */
+function _cityCoord(city){ const C=window.CHINA_CITIES||{coord:{},prov:{},cityProv:{}}; let co=C.coord[city]; if(!co&&C.cityProv[city]) co=C.prov[C.cityProv[city]]; return co||null; }
+function _mapColor(t){ t=Math.max(0,Math.min(1,t)); const c1=[183,228,227],c2=[14,165,164]; return `rgb(${Math.round(c1[0]+(c2[0]-c1[0])*t)},${Math.round(c1[1]+(c2[1]-c1[1])*t)},${Math.round(c1[2]+(c2[2]-c1[2])*t)})`; }
+let _mapInst=null;
+function initMapChart(){
+  if(_mapInst) return;
+  const el=document.getElementById('mapChart');
+  if(!window.echarts){ el.innerHTML='<div style="padding:30px;text-align:center;color:#94a3b8">ECharts 未加载（需 echarts.min.js / echarts-gl.min.js 同目录）。</div>'; return; }
+  if(!(window.CHINA_GEO&&window.CHINA_GEO.features&&window.CHINA_GEO.features.length)){ el.innerHTML='<div style="padding:30px;text-align:center;color:#94a3b8">地图底图未加载（需 china-geo.js 同目录）。城市数据仍可在上方明细表中查看。</div>'; return; }
+  echarts.registerMap('china', window.CHINA_GEO);
+  _mapInst=echarts.init(el,null,{renderer:'canvas'});
+  _mapInst.setOption({
+    tooltip:{ trigger:'item', confine:true, formatter:p=>{ const d=p.data; if(!d||!d.orders) return (p.name||''); return '<b>'+d.name+'</b><br/>订单：'+d.orders+' 单<br/>应收：'+fmtMoney(d.gmv); } },
+    geo3D:{ map:'china', roam:true,
+      itemStyle:{ color:'#eef3f2', borderColor:'#cbd5e1', borderWidth:0.8, opacity:0.95 },
+      emphasis:{ itemStyle:{ color:'#d6ece9' }, label:{show:false} },
+      viewControl:{ projection:'perspective', autoRotate:false, distance:118, alpha:55, beta:0, minDistance:45, maxDistance:340, panMouseButton:'left', rotateMouseButton:'right' },
+      light:{ main:{ intensity:1.1, shadow:false }, ambient:{ intensity:0.55 } },
+      regionHeight:3 },
+    series:[{ type:'bar3D', coordinateSystem:'geo3D', barSize:0.5, shading:'color', bevelSize:0.08,
+      label:{ show:true, position:'top', distance:1, fontSize:10.5, color:'#0f2231', fontWeight:700,
+        formatter:p=>{ const d=p.data; return d? (d.name+' '+d.orders+'单·'+fmtMoney(d.gmv)) : ''; } },
+      itemStyle:{ opacity:0.95 }, emphasis:{ label:{show:true}, itemStyle:{opacity:1} }, data:[] }]
+  });
+  el.addEventListener('dblclick',()=>{ _mapInst&&_mapInst.setOption({geo3D:[{viewControl:{distance:118,alpha:55,beta:0}}]}); });
+  window.addEventListener('resize',()=>{ _mapInst&&_mapInst.resize(); });
+}
+function renderMap(cityAgg, metric){
+  initMapChart();
+  if(!_mapInst) return;
+  const maxGmv=Math.max(1,...cityAgg.map(c=>c.gmv));
+  const data=cityAgg.map(c=>{
+    const co=_cityCoord(c.city); if(!co) return null;
+    const v = metric==='gmv'? c.gmv : c.orders;
+    return { name:c.city, value:[co[0],co[1],v], orders:c.orders, gmv:c.gmv, itemStyle:{color:_mapColor(Math.sqrt(c.gmv/maxGmv))} };
   }).filter(Boolean);
-  // 南部（屏幕下方）柱子后画，保证前后遮挡正确
-  const sorted=[...placed].sort((a,b)=>_proj(a.co[0],a.co[1],W,H,pad)[1]-_proj(b.co[0],b.co[1],W,H,pad)[1]);
-  let bars='', labels='';
-  for(const {c,co} of sorted){
-    const [x,y]=_proj(co[0],co[1],W,H,pad);
-    const ct = Math.sqrt(c.gmv/maxG);            // 颜色恒按应收 GMV 着色
-    const t = metric==='gmv'? ct : Math.sqrt(c.orders/maxO);  // 柱高按所选指标
-    const h = 8 + t*118;
-    const w = 11;
-    const color=_color(ct);
-    bars+=_bar3d(x,y,w,h,color);
-    const ox=Math.round(w*0.55), oy=-Math.round(w*0.36);
-    const tx=x+ox/2, ty=y-h+oy-5;
-    const t1=c.city, t2=`${c.orders}单 · ${fmtMoney(c.gmv)}`;
-    const pw=Math.max(t1.length*7+10, t2.length*6.2+12), px=tx-pw/2;
-    labels+=`<g pointer-events="all"><title>${c.city}：订单 ${c.orders} 单，应收 ${fmtMoney(c.gmv)}</title>`
-      +`<rect x="${px.toFixed(1)}" y="${(ty-25).toFixed(1)}" width="${pw.toFixed(1)}" height="23" rx="5" fill="#ffffff" fill-opacity="0.88" stroke="#cbd5e1" stroke-width="0.7"/>`
-      +`<text x="${tx.toFixed(1)}" y="${(ty-12).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#0f2231">${t1}</text>`
-      +`<text x="${tx.toFixed(1)}" y="${(ty-2).toFixed(1)}" text-anchor="middle" font-size="9.3" fill="#0EA5A4">${t2}</text></g>`;
-  }
-  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="中国城市订单3D柱状分布图">${prov}${bars}${labels}</svg>`;
+  _mapInst.setOption({ series:[{ data }] });
 }
 /* 城市分布榜：订单数 TOP / 应收 GMV TOP */
 function renderMapDist(cityAgg){
@@ -783,9 +790,8 @@ function render(){
   const cityAgg=computeCityAgg(M.cur);
   const mapMetric=document.getElementById('mapMetric').value;
   document.getElementById('mapTitle').textContent= (M.isAll?'全部月份':ym.replace('-','年')+'月')+' 城市订单 / 应收分布（3D 柱状）';
-  document.getElementById('mapChart').innerHTML=svgChinaMap(cityAgg,920,640,mapMetric);
-  mapSyncView();   // 重绘后恢复当前缩放/平移（矢量视图，始终清晰）
-  document.getElementById('mapCityCount').textContent='覆盖 '+cityAgg.length+' 个城市';
+    renderMap(cityAgg,mapMetric);   // ECharts geo3D+bar3D：矢量可缩放，刷新时保留相机视角
+document.getElementById('mapCityCount').textContent='覆盖 '+cityAgg.length+' 个城市';
   document.getElementById('mapDist').innerHTML=renderMapDist(cityAgg);
   // 明细表
   renderDetail(M);
@@ -1071,44 +1077,19 @@ document.getElementById('fileInput').addEventListener('change',e=>{ if(e.target.
 document.getElementById('folderInput').addEventListener('change',e=>{ if(e.target.files.length) handleFiles(e.target.files); });
 document.getElementById('mapMetric').addEventListener('change',render);
 
-/* ---------- 地图缩放 / 平移：直接改 SVG 视图(viewBox)，矢量重投影，放大永不模糊 ---------- */
-const MAP_W=920, MAP_H=640;
-let _mapZ=1, _mapX=0, _mapY=0;          // 缩放倍数 + 视图左上角(viewBox 坐标)
-const _mapVp=document.getElementById('mapViewport');
-const _mapChart=document.getElementById('mapChart');
-function mapSyncView(){                  // 把当前缩放/平移写进 SVG 的 viewBox
-  const svg=_mapChart.querySelector('svg'); if(!svg) return;
-  const vbW=MAP_W/_mapZ, vbH=MAP_H/_mapZ;
-  _mapX=Math.max(0,Math.min(MAP_W-vbW,_mapX));   // 限制在底图范围内
-  _mapY=Math.max(0,Math.min(MAP_H-vbH,_mapY));
-  svg.setAttribute('viewBox',_mapX.toFixed(2)+' '+_mapY.toFixed(2)+' '+vbW.toFixed(2)+' '+vbH.toFixed(2));
+/* ---------- 地图缩放 / 平移：由 ECharts geo3D 原生漫游实现（滚轮缩放·左键拖拽平移·右键旋转·双击复位），矢量重投影，放大永不模糊 ---------- */
+function _mapZoom(factor){
+  if(!_mapInst) return;
+  const g=_mapInst.getOption().geo3D[0];
+  const vc=g.viewControl||{};
+  let d=(vc.distance||118)*factor;
+  d=Math.max(vc.minDistance||45, Math.min(vc.maxDistance||340, d));
+  _mapInst.setOption({geo3D:[{viewControl:{distance:d}}]});
 }
-function _resetMap(){ _mapZ=1; _mapX=0; _mapY=0; mapSyncView(); }
-_mapVp.addEventListener('wheel',e=>{
-  e.preventDefault();
-  const svg=_mapChart.querySelector('svg'); if(!svg) return;
-  const rect=_mapVp.getBoundingClientRect();
-  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
-  const vbW=MAP_W/_mapZ, k=vbW/rect.width;        // viewBox 单位 / CSS 像素
-  const vbx=_mapX+mx*k, vby=_mapY+my*k;          // 光标处的地图坐标
-  const factor=e.deltaY<0?1.2:1/1.2;
-  _mapZ=Math.max(1,Math.min(16,_mapZ*factor));
-  const vbW2=MAP_W/_mapZ, k2=vbW2/rect.width;
-  _mapX=vbx-mx*k2; _mapY=vby-my*k2;              // 以光标为中心缩放
-  mapSyncView();
-},{passive:false});
-let _drag=false,_lx=0,_ly=0;
-_mapVp.addEventListener('pointerdown',e=>{ _drag=true; _lx=e.clientX; _ly=e.clientY; _mapVp.setPointerCapture(e.pointerId); });
-_mapVp.addEventListener('pointermove',e=>{ if(!_drag) return;
-  const rect=_mapVp.getBoundingClientRect();
-  const vbW=MAP_W/_mapZ, k=vbW/rect.width;
-  _mapX-=(e.clientX-_lx)*k; _mapY-=(e.clientY-_ly)*k; _lx=e.clientX; _ly=e.clientY; mapSyncView(); });
-_mapVp.addEventListener('pointerup',()=>{ _drag=false; });
-_mapVp.addEventListener('pointercancel',()=>{ _drag=false; });
-_mapVp.addEventListener('dblclick',_resetMap);
-document.getElementById('mapZoomIn').addEventListener('click',()=>{ _mapZ=Math.min(16,_mapZ*1.25); mapSyncView(); });
-document.getElementById('mapZoomOut').addEventListener('click',()=>{ _mapZ=Math.max(1,_mapZ/1.25); mapSyncView(); });
-document.getElementById('mapZoomReset').addEventListener('click',_resetMap);
+document.getElementById('mapZoomIn').addEventListener('click',()=>_mapZoom(0.82));
+document.getElementById('mapZoomOut').addEventListener('click',()=>_mapZoom(1.22));
+document.getElementById('mapZoomReset').addEventListener('click',()=>{ if(_mapInst) _mapInst.setOption({geo3D:[{viewControl:{distance:118,alpha:55,beta:0}}]}); });
+
 
 /* 导航高亮 */
 const navlinks=[...document.querySelectorAll('.nav-links a')];
