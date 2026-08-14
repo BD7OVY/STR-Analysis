@@ -3,14 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>短租经营分析 · 工作台</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<title>销售经营分析平台</title>
+<script src="./xlsx.full.min.js"></script>
+<script src="./china-geo.js"></script>
 <style>
   :root{
+    /* 三色品牌体系：绿=增长/完成，橙=提示/对比，青=主品牌 */
     --bg:#f6f8f7; --card:#ffffff; --ink:#0f2231; --muted:#64748b;
-    --line:#e4e9ee; --accent:#0ea5a4; --accent-d:#0c8483;
-    --blue:#3b82f6; --amber:#f59e0b; --red:#ef4444; --violet:#8b5cf6;
-    --green:#10b981; --pink:#ec4899; --slate:#64748b;
+    --line:#e4e9ee;
+    --green:#0FBA81; --orange:#FB9C0D; --teal:#0EA5A4;
+    --accent:#0EA5A4; --accent-d:#0FBA81;   /* 兼容旧引用：主色青，深档绿 */
+    --slate:#64748b;                         /* 仅用于中性文字/对比条 */
     --shadow:0 1px 3px rgba(15,34,49,.06),0 8px 24px rgba(15,34,49,.05);
   }
   *{box-sizing:border-box;}
@@ -36,6 +39,17 @@
   .eyebrow{font-size:12px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:var(--accent-d);margin-bottom:6px;}
   .sec-title{font-size:27px;font-weight:800;margin:0 0 6px;}
   .sec-sub{color:var(--muted);margin:0 0 22px;font-size:14px;}
+  /* ---------- 工作流步骤条 ---------- */
+  .workflow{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:6px 0 26px;}
+  .wf-step{flex:1;min-width:200px;display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow);}
+  .wf-num{width:34px;height:34px;flex:0 0 34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px;}
+  .wf-step:nth-child(1) .wf-num{background:var(--teal);}
+  .wf-step:nth-child(3) .wf-num{background:var(--orange);}
+  .wf-step:nth-child(5) .wf-num{background:var(--green);}
+  .wf-t{font-weight:800;font-size:15px;color:var(--ink);}
+  .wf-d{font-size:12px;color:var(--muted);margin-top:1px;}
+  .wf-arrow{color:var(--muted);font-size:20px;align-self:center;font-weight:700;}
+  @media (max-width:760px){ .wf-arrow{display:none;} .wf-step{flex-basis:100%;} }
   /* ---------- 导入区 ---------- */
   .drop{border:2px dashed var(--line);border-radius:16px;background:#fff;padding:38px 24px;text-align:center;transition:.2s;}
   .drop.hover{border-color:var(--accent);background:rgba(14,165,164,.04);}
@@ -58,7 +72,7 @@
   .kpi .k{font-size:13px;color:var(--muted);font-weight:600;}
   .kpi .v{font-size:30px;font-weight:800;margin:6px 0 2px;letter-spacing:-.5px;}
   .kpi .s{font-size:12.5px;color:var(--muted);}
-  .up{color:#dc2626;} .down{color:#16a34a;} /* 涨红跌绿（A股习惯） */
+  .up{color:#0FBA81;} .down{color:#FB9C0D;} /* 增长=绿，下降=橙（三色体系内） */
   /* ---------- 图表卡 ---------- */
   .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:20px;}
   .chart-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--shadow);}
@@ -66,6 +80,33 @@
   .chart-card h3{margin:0 0 14px;font-size:15.5px;font-weight:700;}
   .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12.5px;color:var(--muted);margin-top:10px;}
   .legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:middle;}
+  /* ---------- 城市分布地图（3D 柱状） ---------- */
+  .map-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .map-head h3{margin:0;font-size:15.5px;font-weight:700;}
+  .map-metric{font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:8px;}
+  .map-dist{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px;}
+  .dist-col{background:#f8faf9;border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  .dist-col h4{margin:0 0 8px;font-size:13px;font-weight:700;color:var(--accent-d);}
+  .dist-col ul{list-style:none;margin:0;padding:0;}
+  .dist-col li{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px dashed var(--line);font-size:13px;}
+  .dist-col li:last-child{border-bottom:none;}
+  .dist-col .mc{font-weight:700;min-width:46px;}
+  .dist-col .mo{color:var(--muted);margin-left:auto;}
+  .dist-col .mg{color:var(--accent-d);font-weight:700;min-width:78px;text-align:right;}
+  /* 地图缩放视口（仅缩放/平移层，不动柱体·标签·图例） */
+  .map-viewport{ position:relative; width:100%; overflow:hidden; border-radius:14px; background:#f8faf9;
+    cursor:grab; user-select:none; -webkit-user-select:none; touch-action:none; }
+  .map-viewport:active{ cursor:grabbing; }
+  .map-viewport svg{ display:block; }
+  #mapChart{} /* 缩放通过 SVG viewBox 矢量重投影实现，放大永不模糊 */
+  .map-ctrl{ position:absolute; top:10px; right:10px; display:flex; flex-direction:column; gap:6px; z-index:5; }
+  .map-ctrl button{ width:34px; height:34px; border:none; border-radius:9px; background:rgba(255,255,255,.92);
+    color:#0f2231; font-size:19px; line-height:1; cursor:pointer; box-shadow:0 1px 4px rgba(15,34,49,.18);
+    display:flex; align-items:center; justify-content:center; transition:all .12s; }
+  .map-ctrl button:hover{ background:#fff; color:var(--accent); box-shadow:0 2px 8px rgba(15,34,49,.25); }
+  .map-ctrl button:active{ transform:scale(.92); }
+  .map-hint{ position:absolute; left:12px; bottom:10px; font-size:12px; color:var(--muted);
+    background:rgba(255,255,255,.85); padding:3px 9px; border-radius:8px; z-index:5; pointer-events:none; }
   /* ---------- 洞察 ---------- */
   .insight{background:linear-gradient(180deg,#eafaf8,#ffffff);border:1px solid #bfe9e6;border-radius:14px;padding:16px 20px;margin-top:18px;}
   .insight .t{font-weight:800;color:var(--accent-d);margin-bottom:8px;font-size:15px;}
@@ -79,10 +120,11 @@
   tbody tr:hover{background:#f7fbfa;}
   tfoot td{font-weight:800;background:#f1f5f4;}
   .tag{display:inline-block;padding:2px 9px;border-radius:7px;font-size:12px;font-weight:700;}
-  .tag.done{background:#dcfce7;color:#166534;} .tag.doing{background:#fef9c3;color:#854d0e;} .tag.wait{background:#e0f2fe;color:#075985;}
+  .tag.done{background:#d8f5ec;color:#0FBA81;} .tag.doing{background:#fdeccd;color:#FB9C0D;} .tag.wait{background:#d4f1f0;color:#0EA5A4;}
   footer{text-align:center;color:var(--slate);font-size:12.5px;padding:30px 0 10px;}
   @media (max-width:760px){
     .kpis{grid-template-columns:repeat(2,1fr);} .cards{grid-template-columns:1fr;}
+    .map-dist{grid-template-columns:1fr;}
     .nav-links{display:none;position:absolute;top:62px;left:0;right:0;flex-direction:column;background:#fff;border-bottom:1px solid var(--line);padding:8px;}
     .nav-links.open{display:flex;} .nav-toggle{display:block;}
   }
@@ -90,9 +132,180 @@
 </head>
 <body>
 
+<script id="schema-data" type="application/json">
+{
+  "_doc": "销售订单「表头统一」单一映射配置。Python 管线与前端导入按钮都读它。新增渠道/列只需改这里，不用动代码。",
+  "unified_fields": [
+    "订单号", "下单时间", "预计取车时间", "实际取车时间", "预计还车时间",
+    "实际还车时间", "租期", "是否节假日订单", "车型", "车型统一", "城市",
+    "订单金额", "订单所属平台", "订单状态", "订单状态统一", "车牌号"
+  ],
+  "status_map": {
+    "已完成": "已完成", "已取消": "已取消", "已还车": "已完成",
+    "待还车": "待还车", "待取车": "待取车", "待违章处理": "已完成",
+    "待用车": "待取车", "用车中": "待还车"
+  },
+  "model_patterns": [
+    ["AION\\s*S\\s*Plus", "AION S Plus"],
+    ["AION\\s*S\\s*PLUS", "AION S Plus"],
+    ["AION\\s*S", "AION S"],
+    ["AION\\s*Y\\s*PLUS", "AION Y Plus"],
+    ["AION\\s*Y\\s*Plus", "AION Y Plus"],
+    ["AION\\s*Y", "AION Y"],
+    ["bZ\\s*3", "丰田bZ3"],
+    ["EU5\\s*PLUS", "北京EU5 PLUS"],
+    ["EU5\\s*Plus", "北京EU5 PLUS"],
+    ["EU5", "北京EU5"],
+    ["SKY\\s*EV01", "风神SKY EV01"],
+    ["SKYEV01", "风神SKY EV01"],
+    ["帝豪新能源", "帝豪新能源"],
+    ["帝豪\\s*EV", "帝豪新能源"],
+    ["零跑B01", "零跑B01"],
+    ["星海S7", "星海S7"],
+    ["雷凌", "丰田雷凌"],
+    ["秦新能源", "比亚迪秦新能源"]
+  ],
+  "holidays_2026": [
+    ["元旦", "2026-01-01", "2026-01-03"],
+    ["春节", "2026-02-15", "2026-02-23"],
+    ["清明节", "2026-04-04", "2026-04-06"],
+    ["劳动节", "2026-05-01", "2026-05-05"],
+    ["端午节", "2026-06-19", "2026-06-21"],
+    ["中秋节", "2026-09-25", "2026-09-27"],
+    ["国庆节", "2026-10-01", "2026-10-07"]
+  ],
+  "city_maps": {
+    "哈啰": {
+      "快快出行-北京店": "北京", "快快出行-东莞店": "东莞",
+      "快快出行-广州（白云店）": "广州", "快快出行-广州（钟村店）": "广州",
+      "快快出行-广州店": "广州", "快快出行-昆明店": "昆明",
+      "快快出行-汕尾店": "汕尾", "快快出行-深圳店": "深圳",
+      "快快出行-西安店": "西安", "快快出行-中山店": "中山",
+      "快快出行-珠海店": "珠海", "快快租车-汕头店": "汕头",
+      "快快租车-重庆店（启山创展店）": "重庆"
+    },
+    "滴滴": {
+      "快快租车-北京店": "北京", "快快租车-东莞店": "东莞",
+      "快快租车-广州店": "广州", "快快租车-昆明店": "昆明",
+      "快快租车-汕头店": "汕头", "快快租车-深圳店": "深圳",
+      "快快租车-武汉店": "武汉", "快快租车—武汉店": "武汉",
+      "快快租车-西安店": "西安", "快快租车-重庆店（霓裳大道）": "重庆",
+      "快快租车-珠海店": "珠海"
+    }
+  },
+  "platforms": {
+    "哈啰": {
+      "filename_keywords": ["哈啰"],
+      "identify": ["商家应收", "创建时间", "排车车牌号", "排车车辆"],
+      "signature_columns": ["订单状态", "取车门店", "商家应收", "创建时间"],
+      "columns": {
+        "订单号": ["订单编号"],
+        "下单时间": ["创建时间"],
+        "预计取车时间": ["计划取车时间"],
+        "实际取车时间": ["实际取车时间"],
+        "预计还车时间": ["计划还车时间"],
+        "实际还车时间": ["实际还车时间"],
+        "租期": ["租期"],
+        "车型": ["预订车辆", "排车车辆"],
+        "城市列": ["取车门店"],
+        "城市映射": "哈啰",
+        "订单金额": ["商家应收"],
+        "订单状态": ["订单状态"],
+        "车牌号": ["排车车牌号"]
+      },
+      "rules": {}
+    },
+    "滴滴": {
+      "filename_keywords": ["滴滴"],
+      "identify": ["车型信息", "车辆信息"],
+      "signature_columns": ["订单状态", "取车门店", "订单金额", "下单时间"],
+      "columns": {
+        "订单号": ["订单编号"],
+        "下单时间": ["下单时间"],
+        "预计取车时间": ["取车时间"],
+        "实际取车时间": ["实际取车时间"],
+        "预计还车时间": ["还车时间"],
+        "实际还车时间": ["实际还车时间"],
+        "租期": ["租期"],
+        "车型": ["车型信息"],
+        "城市列": ["取车门店"],
+        "城市映射": "滴滴",
+        "订单金额": ["订单金额"],
+        "订单状态": ["订单状态"],
+        "车牌号": ["车辆信息"]
+      },
+      "rules": {}
+    },
+    "悟空": {
+      "filename_keywords": ["悟空"],
+      "identify": ["商户应收"],
+      "signature_columns": ["订单状态", "取车城市", "商户应收", "下单时间"],
+      "columns": {
+        "订单号": ["订单号"],
+        "下单时间": ["下单时间"],
+        "预计取车时间": ["预计取车时间"],
+        "实际取车时间": ["实际取车时间"],
+        "预计还车时间": ["预计还车时间"],
+        "实际还车时间": ["实际还车时间"],
+        "租期": ["租期"],
+        "车型": ["车型"],
+        "城市列": ["取车城市"],
+        "城市映射": null,
+        "订单金额": ["商户应收"],
+        "订单状态": ["订单状态"],
+        "车牌号": ["实际车牌号", "车牌号"]
+      },
+      "rules": {
+        "clear_actual_pickup_on": ["待用车"],
+        "clear_actual_return_on": ["用车中"]
+      }
+    },
+    "携程": {
+      "filename_keywords": ["携程"],
+      "identify": ["供应商应收", "携程订单号"],
+      "signature_columns": ["订单状态", "取车城市", "供应商应收", "下单时间"],
+      "columns": {
+        "订单号": ["携程订单号"],
+        "下单时间": ["下单时间"],
+        "预计取车时间": ["取车时间"],
+        "实际取车时间": ["实际取车时间"],
+        "预计还车时间": ["还车时间"],
+        "实际还车时间": ["实际还车时间"],
+        "租期": ["租期"],
+        "车型": ["车型"],
+        "城市列": ["取车城市"],
+        "城市映射": null,
+        "订单金额": ["供应商应收"],
+        "订单状态": ["订单状态"],
+        "车牌号": ["车牌"]
+      },
+      "rules": {}
+    }
+  },
+  "_field_keywords_doc": "分词匹配规则：每个统一字段对应若干「规则」，每条规则是必须同时出现的子串数组（顺序无关，可应对『取车时间(实际)』『实际取车日期』等列名变体）。解析时先走 columns 精确候选，未命中再走本规则，按『规则内子串长度之和』打分，高分优先，同分按下方优先级。",
+  "field_keywords": {
+    "订单号": [["订单号"], ["订单编号"], ["单号"], ["orderid"], ["order_id"]],
+    "下单时间": [["下单", "时间"], ["创建", "时间"], ["下单", "日期"], ["order", "time"]],
+    "预计取车时间": [["预计", "取车"], ["计划", "取车"], ["取车时间"]],
+    "实际取车时间": [["实际", "取车"]],
+    "预计还车时间": [["预计", "还车"], ["计划", "还车"], ["还车时间"]],
+    "实际还车时间": [["实际", "还车"]],
+    "租期": [["租期"], ["租赁"], ["天数"]],
+    "车型": [["车型"], ["车辆"]],
+    "城市列": [["取车城市"], ["城市"], ["取车门店"], ["门店"], ["store"]],
+    "订单金额": [["订单金额"], ["金额"], ["应收"], ["gmv"], ["流水"]],
+    "订单状态": [["状态"], ["status"]],
+    "车牌号": [["车牌"], ["车辆信息"], ["plate"]]
+  },
+  "field_excludes": {
+    "订单金额": ["优惠", "定金", "押金", "订金"]
+  }
+}
+</script>
+
 <nav class="nav">
   <div class="nav-inner">
-    <div class="brand"><span class="dot"></span>短租经营分析</div>
+    <div class="brand"><span class="dot"></span>销售经营分析平台</div>
     <button class="nav-toggle" onclick="document.getElementById('navLinks').classList.toggle('open')">☰</button>
     <div class="nav-links" id="navLinks">
       <a href="#sec-import" class="active">导入数据</a>
@@ -100,22 +313,34 @@
       <a href="#sec-week">周数据环比</a>
       <a href="#sec-month">月数据环比</a>
       <a href="#sec-detail">城市平台订单明细</a>
+      <a href="#sec-map">城市分布地图</a>
     </div>
   </div>
 </nav>
 
 <div class="wrap">
 
+  <!-- 工作流：导入数据 → 平台处理 → 数据展示 -->
+  <div class="workflow">
+    <div class="wf-step"><div class="wf-num">1</div><div><div class="wf-t">导入数据</div><div class="wf-d">拖入各渠道原始订单（Excel / JSON）</div></div></div>
+    <div class="wf-arrow">→</div>
+    <div class="wf-step"><div class="wf-num">2</div><div><div class="wf-t">平台处理</div><div class="wf-d">自动识别渠道 · 统一表头 · 按城市聚合</div></div></div>
+    <div class="wf-arrow">→</div>
+    <div class="wf-step"><div class="wf-num">3</div><div><div class="wf-t">数据展示</div><div class="wf-d">订单 · 应收 · 3D 地图 · 明细一览</div></div></div>
+  </div>
+
   <!-- 导入数据 -->
   <section id="sec-import">
     <div class="eyebrow">Step 1</div>
     <h2 class="sec-title">导入数据</h2>
-    <p class="sec-sub">上传归一化后的订单 Excel / JSON（字段：订单号、实际取车时间、订单金额、城市、订单所属平台、订单状态统一、车型统一、是否节假日订单、租期）。或一键使用示例数据。</p>
+    <p class="sec-sub">上传各平台后台下载的<b>原始订单 Excel</b>（哈啰 / 滴滴 / 悟空 / 携程，表头各不相同也没关系，系统按列特征自动识别平台并统一表头）；也支持已归一化的 .xlsx 或 .json。可一次选多个文件。或一键使用示例数据。</p>
     <div class="drop" id="drop">
       <h3>拖拽文件到此处，或点击选择</h3>
-      <p>支持 .xlsx（统一表头） / .json（订单数组）</p>
-      <input type="file" id="fileInput" accept=".xlsx,.xls,.json" style="display:none">
+      <p>支持多平台原始 .xlsx（自动统一表头） / 归一化 .xlsx / .json（订单数组）</p>
+      <input type="file" id="fileInput" accept=".xlsx,.xls,.json" multiple style="display:none">
+      <input type="file" id="folderInput" webkitdirectory directory multiple style="display:none">
       <button class="btn" onclick="document.getElementById('fileInput').click()">选择文件</button>
+      <button class="btn ghost" onclick="document.getElementById('folderInput').click()">选择文件夹</button>
       <button class="btn ghost" onclick="loadSample()">使用示例数据</button>
       <div class="file-row" id="fileRow"></div>
     </div>
@@ -205,7 +430,42 @@
     </div>
   </section>
 
-  <footer>短租经营分析工作台 · 纯前端单文件应用 · 数据本地处理不上传</footer>
+  <!-- 城市分布地图 -->
+  <section id="sec-map">
+    <div class="eyebrow">Geo</div>
+    <h2 class="sec-title">城市分布地图</h2>
+    <p class="sec-sub">所选月份各城市的订单与应收分布，以 <b>3D 柱状图</b> 展示：柱高 = 所选指标（订单数 / 应收 GMV），颜色深浅 = 应收 GMV；柱顶直接标注「城市 · 订单数 · 应收」，悬停看明细。基于城市名自动定位，无需坐标列；未识别城市自动回退到所属省份中心。</p>
+    <div class="cards">
+      <div class="chart-card full">
+        <div class="map-head">
+          <h3 id="mapTitle">城市订单 / 应收分布图</h3>
+          <label class="map-metric">柱高依据
+            <select id="mapMetric">
+              <option value="orders" selected>订单数</option>
+              <option value="gmv">应收 GMV</option>
+            </select>
+          </label>
+        </div>
+        <div class="map-viewport" id="mapViewport">
+          <div id="mapChart"></div>
+          <div class="map-ctrl">
+            <button id="mapZoomIn" title="放大" aria-label="放大">＋</button>
+            <button id="mapZoomOut" title="缩小" aria-label="缩小">－</button>
+            <button id="mapZoomReset" title="复位" aria-label="复位视图">⟳</button>
+          </div>
+          <div class="map-hint">滚轮缩放 · 拖拽平移 · 双击复位</div>
+        </div>
+        <div class="legend">
+          <span>柱高 = 所选指标</span>
+          <span><i style="display:inline-block;width:14px;height:11px;background:linear-gradient(90deg,#b7e4e3,#0EA5A4);vertical-align:middle"></i> 颜色越深 = 应收 GMV 越高</span>
+          <span id="mapCityCount"></span>
+        </div>
+        <div class="map-dist" id="mapDist"></div>
+      </div>
+    </div>
+  </section>
+
+  <footer>销售经营分析平台 · 纯前端单文件应用 · 数据本地处理不上传</footer>
 </div>
 
 <script>
@@ -213,7 +473,7 @@
    数据层
 ============================================================ */
 let DATA = [];          // 当前订单集合
-const PALETTE = ['#0ea5a4','#3b82f6','#f59e0b','#ef4444','#8b5cf6','#10b981','#ec4899','#64748b'];
+const PALETTE = ['#0FBA81','#FB9C0D','#0EA5A4'];
 
 /* ---------- 工具 ---------- */
 function parseDate(s){ if(!s) return null; const m=String(s).match(/(\d{4})-(\d{1,2})-(\d{1,2})/); if(!m) return null; return new Date(+m[1],+m[2]-1,+m[3]); }
@@ -233,10 +493,17 @@ function availableMonths(os){ const s=new Set(); os.forEach(o=>{const d=parseDat
 
 /* ---------- 所选月份指标 ---------- */
 function computeMonth(ym){
-  const {start,end}=monthRange(ym);
-  const pm=prevMonth(ym); const {start:ps,end:pe}=monthRange(pm);
-  const cur=validOrders(DATA.filter(o=>inRange(o,start,end)));
-  const prev=validOrders(DATA.filter(o=>inRange(o,ps,pe)));
+  const isAll=(ym==='ALL');
+  let cur,prev,start,end;
+  if(isAll){
+    cur=validOrders(DATA.filter(o=>parseDate(o['实际取车时间']))); prev=[]; start=null; end=null;   // 全部月份：累计全量（仅含可解析取车时间的订单，与月度分解自洽），无「上月」对比
+  } else {
+    const {start:s,end:e}=monthRange(ym);
+    const pm=prevMonth(ym); const {start:ps,end:pe}=monthRange(pm);
+    cur=validOrders(DATA.filter(o=>inRange(o,s,e)));
+    prev=validOrders(DATA.filter(o=>inRange(o,ps,pe)));
+    start=s; end=e;
+  }
   const curAgg=aggregate(cur), prevAgg=aggregate(prev);
   // 城市 / 平台
   const cg={},cg2={},pg={},pg2={};
@@ -249,15 +516,27 @@ function computeMonth(ym){
   // 节假日
   let holY={orders:0,gmv:0},holN={orders:0,gmv:0};
   cur.forEach(o=>{ if(o['是否节假日订单']==='是'){holY.orders++;holY.gmv+=(+o['订单金额']||0);} else {holN.orders++;holN.gmv+=(+o['订单金额']||0);} });
-  // 日趋势
-  const days=end.getDate(); const daily=[];
-  for(let d=1;d<=days;d++){ const dd=new Date(start.getFullYear(),start.getMonth(),d); const od=cur.filter(o=>{const x=parseDate(o['实际取车时间']); return x&&x.getTime()===dd.getTime();}); daily.push({date:String(start.getMonth()+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'),gmv:od.reduce((s,o)=>s+(+o['订单金额']||0),0),orders:od.length}); }
-  // 周
-  const weeks=weeksOfMonth(ym,cur);
+  // 日趋势 / 月趋势
+  let daily=[];
+  if(isAll){
+    availableMonths(cur).forEach(m=>{ const r=monthRange(m); const od=cur.filter(o=>inRange(o,r.start,r.end)); daily.push({date:m,gmv:od.reduce((s,o)=>s+(+o['订单金额']||0),0),orders:od.length}); });
+  } else {
+    const days=end.getDate();
+    for(let d=1;d<=days;d++){ const dd=new Date(start.getFullYear(),start.getMonth(),d); const od=cur.filter(o=>{const x=parseDate(o['实际取车时间']); return x&&x.getTime()===dd.getTime();}); daily.push({date:String(start.getMonth()+1).padStart(2,'0')+'-'+String(d).padStart(2,'0'),gmv:od.reduce((s,o)=>s+(+o['订单金额']||0),0),orders:od.length}); }
+  }
+  // 周 / 月环比
+  let weeks;
+  if(isAll){
+    const ms=availableMonths(cur);
+    weeks=ms.map(m=>{ const r=monthRange(m); return {label:m,agg:aggregate(cur.filter(o=>inRange(o,r.start,r.end)))}; });
+    for(let i=1;i<weeks.length;i++){ const p=weeks[i-1].agg.gmv,c=weeks[i].agg.gmv; weeks[i].wow=p?((c-p)/p*100):null; }
+  } else {
+    weeks=weeksOfMonth(ym,cur);
+  }
   // 车型
   const mg={}; cur.forEach(o=>{const m=o['车型统一']||'未知'; mg[m]=(mg[m]||0)+(+o['订单金额']||0);});
   const topModels=Object.keys(mg).map(m=>({model:m,gmv:mg[m]})).sort((a,b)=>b.gmv-a.gmv).slice(0,5);
-  return {ym,cur,prev,curAgg,prevAgg,topCities,topPlats,statusDist,holY,holN,daily,weeks,topModels,start,end};
+  return {ym,isAll,cur,prev,curAgg,prevAgg,topCities,topPlats,statusDist,holY,holN,daily,weeks,topModels,start,end};
 }
 
 function weeksOfMonth(ym,os){
@@ -318,10 +597,10 @@ function svgGrouped(mCur,mPrev,w,h){
   let s='';
   items.forEach((it,i)=>{ const cx=pl+gap*i+gap/2, max=Math.max(it.c,it.p,1);
     const hC=it.c/max*ih, hP=it.p/max*ih;
-    s+=`<rect x="${cx-bw-6}" y="${pt+ih-hP}" width="${bw}" height="${hP}" rx="4" fill="#64748b"/>`;
-    s+=`<rect x="${cx+6}" y="${pt+ih-hC}" width="${bw}" height="${hC}" rx="4" fill="#0ea5a4"/>`;
+    s+=`<rect x="${cx-bw-6}" y="${pt+ih-hP}" width="${bw}" height="${hP}" rx="4" fill="#0EA5A4"/>`;
+    s+=`<rect x="${cx+6}" y="${pt+ih-hC}" width="${bw}" height="${hC}" rx="4" fill="#0FBA81"/>`;
     s+=`<text x="${cx-bw/2-6}" y="${pt+ih-hP-6}" text-anchor="middle" font-size="11" fill="#475569">${it.fmt(it.p)}</text>`;
-    s+=`<text x="${cx+bw/2+6}" y="${pt+ih-hC-6}" text-anchor="middle" font-size="11" fill="#0f4a47" font-weight="700">${it.fmt(it.c)}</text>`;
+    s+=`<text x="${cx+bw/2+6}" y="${pt+ih-hC-6}" text-anchor="middle" font-size="11" fill="#0f2231" font-weight="700">${it.fmt(it.c)}</text>`;
     s+=`<text x="${cx}" y="${h-16}" text-anchor="middle" font-size="12.5" font-weight="700" fill="#334155">${it.k}</text>`;
   });
   s+=`<line x1="${pl}" y1="${pt+ih}" x2="${w-pr}" y2="${pt+ih}" stroke="#e4e9ee"/>`;
@@ -334,7 +613,7 @@ function svgWeekBars(weeks,w,h){
   let s='';
   weeks.forEach((wk,i)=>{ const x=pl+step*i+(step-bw)/2, bh=wk.agg.gmv/max*ih;
     s+=`<rect x="${x}" y="${pt+ih-bh}" width="${bw}" height="${bh}" rx="5" fill="#0ea5a4"/>`;
-    if(wk.wow!==undefined&&wk.wow!==null){ const col=wk.wow>=0?'#dc2626':'#16a34a'; const sym=wk.wow>=0?'▲':'▼';
+    if(wk.wow!==undefined&&wk.wow!==null){ const col=wk.wow>=0?'#0FBA81':'#FB9C0D'; const sym=wk.wow>=0?'▲':'▼';
       s+=`<text x="${x+bw/2}" y="${pt+ih-bh-18}" text-anchor="middle" font-size="11" font-weight="700" fill="${col}">${sym}${fmtPct(wk.wow)}</text>`; }
     s+=`<text x="${x+bw/2}" y="${pt+ih-bh-5}" text-anchor="middle" font-size="10.5" fill="#475569">${fmtMoney(wk.agg.gmv)}</text>`;
     s+=`<text x="${x+bw/2}" y="${h-24}" text-anchor="middle" font-size="10" fill="#94a3b8">${wk.label}</text>`;
@@ -344,7 +623,7 @@ function svgWeekBars(weeks,w,h){
 }
 function svgDonut(dist,w,h){
   const total=dist.reduce((s,d)=>s+d.orders,0)||1; const cx=w/2-70,cy=h/2,r=58,sw=22;
-  let a0=-Math.PI/2,s=''; const cmap={'已完成':'#10b981','待还车':'#f59e0b','待取车':'#3b82f6','已取消':'#94a3b8'};
+  let a0=-Math.PI/2,s=''; const cmap={'已完成':'#0FBA81','待还车':'#FB9C0D','待取车':'#0EA5A4','已取消':'#cbd5e1'};
   dist.forEach(d=>{ const frac=d.orders/total, a1=a0+frac*Math.PI*2;
     const x0=cx+r*Math.cos(a0),y0=cy+r*Math.sin(a0),x1=cx+r*Math.cos(a1),y1=cy+r*Math.sin(a1);
     const large=frac>0.5?1:0; s+=`<path d="M${x0} ${y0} A${r} ${r} 0 ${large} 1 ${x1} ${y1}" fill="none" stroke="${cmap[d.status]||'#64748b'}" stroke-width="${sw}" stroke-linecap="butt"/>`;
@@ -359,7 +638,7 @@ function svgDonut(dist,w,h){
     <text x="${cx}" y="${cy+16}" text-anchor="middle" font-size="11" fill="#94a3b8">总订单</text>${s}${lg}</svg>`;
 }
 function svgHoliday(y,n,w,h){
-  const total=y.orders+n.orders||1; const items=[{l:'节假日',d:y,c:'#f59e0b'},{l:'非节假日',d:n,c:'#0ea5a4'}];
+  const total=y.orders+n.orders||1; const items=[{l:'节假日',d:y,c:'#FB9C0D'},{l:'非节假日',d:n,c:'#0EA5A4'}];
   const pl=84,pr=80,pt=16,pb=16, iw=w-pl-pr, ih=h-pt-pb, n2=items.length, bh=ih/n2*0.5, gap=ih/n2*0.5;
   let s=''; items.forEach((it,i)=>{ const y0=pt+i*(bh+gap)+gap/2, bw=it.d.orders/total*iw;
     s+=`<text x="${pl-10}" y="${y0+bh/2+4}" text-anchor="end" font-size="12.5" fill="#334155">${it.l}</text>`;
@@ -369,34 +648,145 @@ function svgHoliday(y,n,w,h){
   return `<svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto">${s}</svg>`;
 }
 
+/* ---------- 中国地图（本地 china-geo.js，零外链） ---------- */
+const CHINA_BBOX={minLng:73,maxLng:135,minLat:17,maxLat:54};
+function _proj(lng,lat,W,H,pad){
+  const midLat=(CHINA_BBOX.minLat+CHINA_BBOX.maxLat)/2;
+  const k=Math.cos(midLat*Math.PI/180);
+  const bw=(CHINA_BBOX.maxLng-CHINA_BBOX.minLng)*k;
+  const bh=(CHINA_BBOX.maxLat-CHINA_BBOX.minLat);
+  const s=Math.min((W-pad*2)/bw,(H-pad*2)/bh);
+  const ox=pad+(W-pad*2-bw*s)/2, oy=pad+(H-pad*2-bh*s)/2;
+  return [ox+(lng-CHINA_BBOX.minLng)*k*s, oy+(CHINA_BBOX.maxLat-lat)*s];
+}
+function _geoPath(geom,W,H,pad){
+  let d='';
+  const polys=geom.type==='Polygon'?[geom.coordinates]:(geom.type==='MultiPolygon'?geom.coordinates:[]);
+  for(const poly of polys){
+    for(const ring of poly){
+      ring.forEach((pt,i)=>{ const [x,y]=_proj(pt[0],pt[1],W,H,pad); d+=(i===0?'M':'L')+x.toFixed(1)+' '+y.toFixed(1)+' '; });
+      d+='Z ';
+    }
+  }
+  return d;
+}
+let _geoCache=null;
+function _provincePaths(W,H,pad){
+  if(_geoCache) return _geoCache;
+  let s='';
+  const feats=(window.CHINA_GEO&&window.CHINA_GEO.features)||[];
+  for(const f of feats){ const d=_geoPath(f.geometry,W,H,pad); if(d) s+=`<path d="${d}" fill="#f1f5f4" stroke="#cbd5e1" stroke-width="0.6"/>`; }
+  _geoCache=s; return s;
+}
+function _lerp(a,b,t){ return Math.round(a+(b-a)*t); }
+function _color(t){ const c1=[183,228,227], c2=[14,165,164]; t=Math.max(0,Math.min(1,t)); return `rgb(${_lerp(c1[0],c2[0],t)},${_lerp(c1[1],c2[1],t)},${_lerp(c1[2],c2[2],t)})`; }
+function computeCityAgg(os){
+  const g={};
+  os.forEach(o=>{ const c=o['城市']; if(!c) return; const e=g[c]||(g[c]={city:c,orders:0,gmv:0}); e.orders++; e.gmv+=(+o['订单金额']||0); });
+  return Object.values(g).sort((a,b)=>b.gmv-a.gmv);
+}
+function _rgb(c){ const m=String(c).match(/\d+/g); return m?[+m[0],+m[1],+m[2]]:[0,0,0]; }
+function _mix(c,t,to){ const [r,g,b]=_rgb(c); const f=x=>Math.max(0,Math.min(255,Math.round(x+(to-x)*t))); return `rgb(${f(r)},${f(g)},${f(b)})`; }
+function _lighten(c,t){ return _mix(c,t,255); }
+function _darken(c,t){ return _mix(c,t,0); }
+/* 等距视角的 3D 柱体：正面 + 顶面 + 右侧面 */
+function _bar3d(x,y,w,h,color){
+  const hw=w/2, ox=Math.round(w*0.55), oy=-Math.round(w*0.36);
+  const x0=x-hw, x1=x+hw, x2=x1+ox, x3=x0+ox;
+  const yb=y, yt=y-h, yb2=yb+oy, yt2=yt+oy;
+  const top=_lighten(color,0.30), side=_darken(color,0.22), ln=_darken(color,0.42);
+  return `<path d="M${x1} ${yb} L${x2} ${yb2} L${x2} ${yt2} L${x1} ${yt} Z" fill="${side}" stroke="${ln}" stroke-width="0.5"/>`
+       + `<path d="M${x0} ${yt} L${x1} ${yt} L${x2} ${yt2} L${x3} ${yt2} Z" fill="${top}" stroke="${ln}" stroke-width="0.5"/>`
+       + `<path d="M${x0} ${yb} L${x1} ${yb} L${x1} ${yt} L${x0} ${yt} Z" fill="${color}" stroke="${ln}" stroke-width="0.5"/>`;
+}
+function svgChinaMap(cityAgg,W,H,metric){
+  if(!(window.CHINA_GEO&&window.CHINA_GEO.features&&window.CHINA_GEO.features.length))
+    return '<div style="padding:30px;text-align:center;color:#94a3b8">地图底图未加载（需 china-geo.js 同目录）。城市数据仍可在上方明细表中查看。</div>';
+  const pad=16, C=window.CHINA_CITIES||{coord:{},prov:{},cityProv:{}};
+  const prov=_provincePaths(W,H,pad);
+  const maxO=Math.max(1,...cityAgg.map(c=>c.orders));
+  const maxG=Math.max(1,...cityAgg.map(c=>c.gmv));
+  const placed=cityAgg.map(c=>{
+    let co=C.coord[c.city]; if(!co&&C.cityProv[c.city]) co=C.prov[C.cityProv[c.city]];
+    return co?{c,co}:null;
+  }).filter(Boolean);
+  // 南部（屏幕下方）柱子后画，保证前后遮挡正确
+  const sorted=[...placed].sort((a,b)=>_proj(a.co[0],a.co[1],W,H,pad)[1]-_proj(b.co[0],b.co[1],W,H,pad)[1]);
+  let bars='', labels='';
+  for(const {c,co} of sorted){
+    const [x,y]=_proj(co[0],co[1],W,H,pad);
+    const ct = Math.sqrt(c.gmv/maxG);            // 颜色恒按应收 GMV 着色
+    const t = metric==='gmv'? ct : Math.sqrt(c.orders/maxO);  // 柱高按所选指标
+    const h = 8 + t*118;
+    const w = 11;
+    const color=_color(ct);
+    bars+=_bar3d(x,y,w,h,color);
+    const ox=Math.round(w*0.55), oy=-Math.round(w*0.36);
+    const tx=x+ox/2, ty=y-h+oy-5;
+    const t1=c.city, t2=`${c.orders}单 · ${fmtMoney(c.gmv)}`;
+    const pw=Math.max(t1.length*7+10, t2.length*6.2+12), px=tx-pw/2;
+    labels+=`<g pointer-events="all"><title>${c.city}：订单 ${c.orders} 单，应收 ${fmtMoney(c.gmv)}</title>`
+      +`<rect x="${px.toFixed(1)}" y="${(ty-25).toFixed(1)}" width="${pw.toFixed(1)}" height="23" rx="5" fill="#ffffff" fill-opacity="0.88" stroke="#cbd5e1" stroke-width="0.7"/>`
+      +`<text x="${tx.toFixed(1)}" y="${(ty-12).toFixed(1)}" text-anchor="middle" font-size="10.5" font-weight="700" fill="#0f2231">${t1}</text>`
+      +`<text x="${tx.toFixed(1)}" y="${(ty-2).toFixed(1)}" text-anchor="middle" font-size="9.3" fill="#0EA5A4">${t2}</text></g>`;
+  }
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" role="img" aria-label="中国城市订单3D柱状分布图">${prov}${bars}${labels}</svg>`;
+}
+/* 城市分布榜：订单数 TOP / 应收 GMV TOP */
+function renderMapDist(cityAgg){
+  const row=(c)=>`<li><span class="mc">${c.city}</span><span class="mo">${c.orders}单</span><span class="mg">${fmtMoney(c.gmv)}</span></li>`;
+  const byO=[...cityAgg].sort((a,b)=>b.orders-a.orders).slice(0,8);
+  const byG=[...cityAgg].sort((a,b)=>b.gmv-a.gmv).slice(0,8);
+  return `<div class="dist-col"><h4>订单数 TOP ${byO.length}</h4><ul>${byO.map(row).join('')}</ul></div>`
+       + `<div class="dist-col"><h4>应收 GMV TOP ${byG.length}</h4><ul>${byG.map(row).join('')}</ul></div>`;
+}
+
 /* ============================================================
    渲染
 ============================================================ */
 function render(){
   const ym=document.getElementById('monthSelect').value; if(!ym) return;
   const M=computeMonth(ym);
-  document.getElementById('rangeBadge').textContent='统计区间：'+M.start.toISOString().slice(0,10)+' ~ '+M.end.toISOString().slice(0,10)+' · 共 '+fmtNum(M.cur.length)+' 单';
+  if(M.isAll){
+    document.getElementById('rangeBadge').textContent='统计区间：全部月份（累计） · 共 '+fmtNum(M.cur.length)+' 单';
+  } else {
+    document.getElementById('rangeBadge').textContent='统计区间：'+M.start.toISOString().slice(0,10)+' ~ '+M.end.toISOString().slice(0,10)+' · 共 '+fmtNum(M.cur.length)+' 单';
+  }
   // KPI
   const gmvG=growth(M.curAgg,M.prevAgg,'gmv'), ordG=growth(M.curAgg,M.prevAgg,'orders');
+  const kLabel=M.isAll?'累计订单数':'本月订单数', gLabel=M.isAll?'累计 GMV':'本月 GMV';
+  const sub=v=> M.isAll? '累计' : ('环比 '+v);
   document.getElementById('kpis').innerHTML=`
-    <div class="kpi"><div class="k">本月订单数</div><div class="v">${fmtNum(M.curAgg.orders)}</div><div class="s">环比 ${arrow(ordG)}</div></div>
-    <div class="kpi"><div class="k">本月 GMV</div><div class="v">${fmtMoney(M.curAgg.gmv)}</div><div class="s">环比 ${arrow(gmvG)}</div></div>
-    <div class="kpi"><div class="k">客单价</div><div class="v">${fmtMoney(M.curAgg.aov)}</div><div class="s">环比 ${arrow(growth(M.curAgg,M.prevAgg,'aov'))}</div></div>
+    <div class="kpi"><div class="k">${kLabel}</div><div class="v">${fmtNum(M.curAgg.orders)}</div><div class="s">${sub(arrow(ordG))}</div></div>
+    <div class="kpi"><div class="k">${gLabel}</div><div class="v">${fmtMoney(M.curAgg.gmv)}</div><div class="s">${sub(arrow(gmvG))}</div></div>
+    <div class="kpi"><div class="k">客单价</div><div class="v">${fmtMoney(M.curAgg.aov)}</div><div class="s">${sub(arrow(growth(M.curAgg,M.prevAgg,'aov')))}</div></div>
     <div class="kpi"><div class="k">在售平台</div><div class="v">${M.topPlats.length}</div><div class="s">覆盖城市 ${M.topCities.length} 个</div></div>`;
   // 图表
-  document.getElementById('trendTitle').textContent=ym.replace('-','年')+'月 GMV 日趋势';
+  document.getElementById('trendTitle').textContent= M.isAll? '各月 GMV 趋势' : (ym.replace('-','年')+'月 GMV 日趋势');
   document.getElementById('trendChart').innerHTML=svgLine(M.daily,680,240);
   document.getElementById('statusChart').innerHTML=svgDonut(M.statusDist,300,200);
   document.getElementById('holidayChart').innerHTML=svgHoliday(M.holY,M.holN,500,160);
-  // 周
-  document.getElementById('weekTitle').textContent=ym.replace('-','年')+'月 各周 GMV 与环比';
+  // 周 / 月环比
+  document.getElementById('weekTitle').textContent= M.isAll? '各月 GMV 与环比' : (ym.replace('-','年')+'月 各周 GMV 与环比');
   document.getElementById('weekChart').innerHTML=svgWeekBars(M.weeks,820,260);
   // 月环比
-  document.getElementById('momTitle').textContent=ym.replace('-','年')+'月 vs 上月';
-  document.getElementById('momChart').innerHTML=svgGrouped(M.curAgg,M.prevAgg,680,260);
+  document.getElementById('momTitle').textContent= M.isAll? '累计概览' : (ym.replace('-','年')+'月 vs 上月');
+  if(M.isAll){
+    document.getElementById('momChart').innerHTML='<div style="padding:28px;color:#64748b;font-size:14px">「全部月份」为累计视图，无上月对比；月度 GMV 与环比已并入上方「各月 GMV 与环比」板块。</div>';
+  } else {
+    document.getElementById('momChart').innerHTML=svgGrouped(M.curAgg,M.prevAgg,680,260);
+  }
   // 城市平台
   document.getElementById('cityChart').innerHTML=svgHBars(M.topCities,'city','gmv',500,Math.max(160,M.topCities.length*34),PALETTE);
   document.getElementById('platChart').innerHTML=svgHBars(M.topPlats,'platform','gmv',500,Math.max(140,M.topPlats.length*38),PALETTE);
+  // 城市地图（3D 柱状）
+  const cityAgg=computeCityAgg(M.cur);
+  const mapMetric=document.getElementById('mapMetric').value;
+  document.getElementById('mapTitle').textContent= (M.isAll?'全部月份':ym.replace('-','年')+'月')+' 城市订单 / 应收分布（3D 柱状）';
+  document.getElementById('mapChart').innerHTML=svgChinaMap(cityAgg,920,640,mapMetric);
+  mapSyncView();   // 重绘后恢复当前缩放/平移（矢量视图，始终清晰）
+  document.getElementById('mapCityCount').textContent='覆盖 '+cityAgg.length+' 个城市';
+  document.getElementById('mapDist').innerHTML=renderMapDist(cityAgg);
   // 明细表
   renderDetail(M);
   // 洞察
@@ -418,24 +808,28 @@ function renderDetail(M){
 }
 
 function renderInsights(M,gmvG,ordG){
-  const ym=M.ym; const li=[];
-  li.push(`本月（${ym.replace('-','年')}月）实际取车 ${M.curAgg.orders} 单，GMV ${fmtMoney(M.curAgg.gmv)}，环比上月 ${fmtPct(gmvG)}。`);
+  const periodLabel=M.isAll?'全部月份（累计）':(M.ym.replace('-','年')+'月');
+  const li=[];
+  li.push(`${periodLabel}实际取车 ${M.curAgg.orders} 单，GMV ${fmtMoney(M.curAgg.gmv)}${M.isAll?'':'，环比上月 '+fmtPct(gmvG)}。`);
   if(M.topCities.length) li.push('最赚钱城市 Top3：'+M.topCities.slice(0,3).map(c=>`${c.city}(${fmtMoney(c.gmv)})`).join('、')+'。');
   if(M.topPlats.length) li.push('最赚钱平台：'+M.topPlats.slice(0,3).map(p=>`${p.platform}(${fmtMoney(p.gmv)})`).join('、')+'。');
-  if(M.curAgg.gmv&&M.topCities.length){ const sh=M.topCities[0].gmv/M.curAgg.gmv*100; li.push(`收入集中度：${M.topCities[0].city} 单城贡献本月 ${sh.toFixed(0)}% GMV，需关注单一城市依赖风险。`); }
+  if(M.curAgg.gmv&&M.topCities.length){ const sh=M.topCities[0].gmv/M.curAgg.gmv*100; li.push(`收入集中度：${M.topCities[0].city} 单城贡献 ${sh.toFixed(0)}% GMV，需关注单一城市依赖风险。`); }
   const peak=M.daily.reduce((a,b)=>b.gmv>a.gmv?b:a,M.daily[0]||{gmv:0,date:''});
-  if(peak&&peak.gmv>0){ const avg=M.curAgg.orders?M.curAgg.gmv/M.curAgg.orders:1; li.push(`本月峰值日 ${peak.date} 单日 GMV ${fmtMoney(peak.gmv)}。`); }
-  if(M.holY.orders===0&&(M.holY.orders+M.holN.orders)>0) li.push('本月无节假日订单，节假日溢价红利尚未释放。');
+  if(peak&&peak.gmv>0){ li.push(`峰值${M.isAll?'月':'日'} ${peak.date} ${M.isAll?'单月':'单日'} GMV ${fmtMoney(peak.gmv)}。`); }
+  if(M.holY.orders===0&&(M.holY.orders+M.holN.orders)>0) li.push(`${M.isAll?'全部月份':'本月'}无节假日订单，节假日溢价红利尚未释放。`);
   document.getElementById('insights').innerHTML=li.map(t=>'<li>'+t+'</li>').join('');
-  // 周观察
+  // 周 / 月观察
   const wi=[]; const wk=M.weeks;
-  if(wk.length){ const totW=wk.reduce((s,w)=>s+w.agg.gmv,0); wi.push(`本月共 ${wk.length} 个自然周，合计 GMV ${fmtMoney(totW)}。`);
-    const best=wk.reduce((a,b)=>b.agg.gmv>a.agg.gmv?b:a); wi.push(`最强周为 ${best.label}，GMV ${fmtMoney(best.agg.gmv)}（${best.agg.orders}单）。`);
-    const last=wk[wk.length-1]; if(last.wow!==null&&last.wow!==undefined) wi.push(`最近一周环比上周 ${fmtPct(last.wow)}。`); }
+  if(wk.length){ const totW=wk.reduce((s,w)=>s+w.agg.gmv,0); wi.push(`${M.isAll?'累计共':'本月共'} ${wk.length} 个${M.isAll?'月份':'自然周'}，合计 GMV ${fmtMoney(totW)}。`);
+    const best=wk.reduce((a,b)=>b.agg.gmv>a.agg.gmv?b:a); wi.push(`最强${M.isAll?'月份':'周'}为 ${best.label}，GMV ${fmtMoney(best.agg.gmv)}（${best.agg.orders}单）。`);
+    const last=wk[wk.length-1]; if(last.wow!==null&&last.wow!==undefined) wi.push(`最近${M.isAll?'一月':'一周'}环比${M.isAll?'前一月':'上周'} ${fmtPct(last.wow)}。`); }
   document.getElementById('weekInsights').innerHTML=wi.map(t=>'<li>'+t+'</li>').join('');
   // 月观察
-  const mi=[`本月订单 ${fmtNum(M.curAgg.orders)} 单、GMV ${fmtMoney(M.curAgg.gmv)}；上月 ${fmtNum(M.prevAgg.orders)} 单、GMV ${fmtMoney(M.prevAgg.gmv)}。`,
-    `GMV 环比 ${fmtPct(gmvG)}，订单数环比 ${fmtPct(ordG)}。`];
+  let mi;
+  if(M.isAll){ mi=[`累计订单 ${fmtNum(M.curAgg.orders)} 单、GMV ${fmtMoney(M.curAgg.gmv)}；覆盖 ${M.topCities.length} 个城市、${M.topPlats.length} 个平台。`,
+    `「全部月份」为累计视图，无上月对比；月度环比见上方「各月 GMV 与环比」。`]; }
+  else { mi=[`本月订单 ${fmtNum(M.curAgg.orders)} 单、GMV ${fmtMoney(M.curAgg.gmv)}；上月 ${fmtNum(M.prevAgg.orders)} 单、GMV ${fmtMoney(M.prevAgg.gmv)}。`,
+    `GMV 环比 ${fmtPct(gmvG)}，订单数环比 ${fmtPct(ordG)}。`]; }
   document.getElementById('momInsights').innerHTML=mi.map(t=>'<li>'+t+'</li>').join('');
 }
 
@@ -445,40 +839,276 @@ function renderInsights(M,gmvG,ordG){
 function initMonthSelect(){
   const months=availableMonths(DATA);
   const sel=document.getElementById('monthSelect'); sel.innerHTML='';
+  const all=document.createElement('option'); all.value='ALL'; all.textContent='全部月份'; sel.appendChild(all);
   months.forEach(m=>{ const o=document.createElement('option'); o.value=m; o.textContent=m.replace('-','年')+'月'; sel.appendChild(o); });
-  if(months.length) sel.value=months[months.length-1];
+  sel.value='ALL';   // 默认展示整体数据，方便一览全貌
 }
 function loadSample(){
-  fetch('data.json').then(r=>r.json()).then(j=>{ DATA=j; initMonthSelect(); render(); document.getElementById('fileRow').textContent='已载入示例数据（'+DATA.length+' 条）。'; scrollToSec('sec-order'); }).catch(e=>alert('示例数据加载失败：'+e));
+  fetch('data.json').then(r=>r.json()).then(j=>{ DATA=j; initMonthSelect(); render(); document.getElementById('fileRow').textContent='已载入示例数据（'+DATA.length+' 条）。'; scrollToSec('sec-order'); })
+  .catch(e=>{ const fr=document.getElementById('fileRow'); if(fr){ fr.style.color='#64748b'; fr.textContent='示例数据未能自动加载（可能因离线或用 file:// 直接打开）。可直接点击「选择文件」导入你自己的订单 Excel，或启动本地服务后访问 http://localhost:8080 查看内置示例。'; } console.warn('示例数据加载失败', e); });
 }
 function scrollToSec(id){ const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'smooth'}); }
 
-function handleFile(file){
-  const name=file.name.toLowerCase();
-  document.getElementById('fileRow').textContent='正在解析：'+file.name+' …';
-  if(name.endsWith('.json')){
-    const rd=new FileReader(); rd.onload=e=>{ try{ DATA=JSON.parse(e.target.result); initMonthSelect(); render(); document.getElementById('fileRow').textContent='已导入 '+DATA.length+' 条（JSON）。'; scrollToSec('sec-order'); }catch(err){ alert('JSON 解析失败：'+err); } }; rd.readAsText(file,'utf-8');
-  } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
-    if(typeof XLSX==='undefined'){ alert('表格解析库未加载（需联网），请改用 JSON 或联网后重试。'); return; }
-    const rd=new FileReader(); rd.onload=e=>{ try{
-      const wb=XLSX.read(e.target.result,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
-      const rows=XLSX.utils.sheet_to_json(ws,{defval:null});
-      const need=['订单号','实际取车时间','订单金额','城市','订单所属平台','订单状态统一'];
-      const miss=need.filter(k=>!(k in (rows[0]||{})));
-      if(miss.length){ alert('缺少必要列：'+miss.join('、')+'。请使用统一表头的订单 Excel。'); return; }
-      DATA=rows.map(r=>({订单号:r['订单号'],实际取车时间:fmtDateCell(r['实际取车时间']),订单金额:+r['订单金额']||0,城市:r['城市']||'',订单所属平台:r['订单所属平台']||'',订单状态统一:r['订单状态统一']||'',车型统一:r['车型统一']||'',是否节假日订单:r['是否节假日订单']||'否',租期:+r['租期']||0}));
-      initMonthSelect(); render(); document.getElementById('fileRow').textContent='已导入 '+DATA.length+' 条（Excel）。'; scrollToSec('sec-order');
-    }catch(err){ alert('Excel 解析失败：'+err); } }; rd.readAsArrayBuffer(file);
-  } else { alert('不支持的文件类型，请上传 .xlsx / .json。'); }
+function fmtDateCell(v){ if(v==null) return null; let d; if(v instanceof Date){ d=v; } else { const m=String(v).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if(!m) return String(v); d=new Date(+m[1],+m[2]-1,+m[3]); } const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,'0'),da=String(d.getDate()).padStart(2,'0'); return `${y}-${mo}-${da}`; }
+
+/* 统一映射配置（与 Python 管线共用 schema_mapping.json） */
+let SCHEMA=null;
+async function loadSchema(){
+  // 优先读取内联配置（兼容 file:// 直接双击打开，无需联网/本地服务）
+  const el=document.getElementById('schema-data');
+  if(el && el.textContent.trim()){ try{ SCHEMA=JSON.parse(el.textContent); }catch(e){ console.warn('内联 schema 解析失败', e); } }
+  // 再尝试远端（本地服务模式永远以最新配置为准）
+  try{ const r=await fetch('schema_mapping.json'); if(r.ok){ const j=await r.json(); if(j) SCHEMA=j; } }catch(e){ /* file:// 下 fetch 失败属正常，已用内联兜底 */ }
+  buildResolvers(); // 依据最新 schema 重建表头解析器
 }
-function fmtDateCell(v){ if(v==null) return null; if(v instanceof Date) return v.toISOString().slice(0,10); const m=String(v).match(/(\d{4})-(\d{1,2})-(\d{1,2})/); return m?`${m[1]}-${String(m[2]).padStart(2,'0')}-${String(m[3]).padStart(2,'0')}`:String(v); }
+
+/* ---------- 鲁棒表头解析：精确候选 → 分词规则（渠道/列名无关） ---------- */
+const _WS=/[\s　]+/g;
+function normHeader(h){ return String(h==null?'':h).trim().toLowerCase().replace(_WS,'').replace(/[（）()]/g,''); }
+let _exactMap=null, _tokenRules=null;
+function buildResolvers(){
+  _exactMap={}; _tokenRules=[];
+  if(!SCHEMA) return;
+  // 1) 精确候选：扫描所有平台 columns（保留原有精确匹配，最稳）
+  for(const cfg of Object.values(SCHEMA.platforms||{})){
+    for(const [field,cands] of Object.entries(cfg.columns||{})){
+      if(!Array.isArray(cands)) continue; // 跳过「城市映射」等字符串型字段
+      for(const cand of cands){
+        const nk=normHeader(cand); if(nk && !(nk in _exactMap)) _exactMap[nk]=field;
+      }
+    }
+  }
+  // 2) 分词规则（field_keywords）：每条规则是「必须同时出现的子串」数组；得分=子串长度之和，高分优先
+  const fk=SCHEMA.field_keywords||{};
+  for(const [field,rules] of Object.entries(fk)){
+    for(const rule of rules){
+      const score=rule.reduce((s,t)=>s+normHeader(t).length,0);
+      _tokenRules.push({field, tokens:rule.map(normHeader), score});
+    }
+  }
+  // 同分时字段优先级（越靠前越优先）：取车/还车类先按「实际>预计」，再按业务顺序
+  const pri={订单号:0,实际取车时间:1,预计取车时间:2,实际还车时间:3,预计还车时间:4,下单时间:5,订单金额:6,订单状态:7,车型:8,城市列:9,车牌号:10,租期:11};
+  _tokenRules.sort((a,b)=>(b.score-a.score)||((pri[a.field]??99)-(pri[b.field]??99)));
+}
+// 把一组真实表头解析成 统一字段 → 实际列名
+function resolveHeaders(headers){
+  const map={};
+  for(const h of headers){ const f=_exactMap[normHeader(h)]; if(f && !(f in map)) map[f]=h; }
+  if(_tokenRules){
+    const excl=SCHEMA.field_excludes||{};
+    for(const h of headers){
+      const nh=normHeader(h);
+      for(const t of _tokenRules){
+        if(t.tokens.every(tok=>nh.includes(tok))){
+          if(excl[t.field] && excl[t.field].some(x=>nh.includes(normHeader(x)))) continue; // 排除词命中则跳过该规则
+          if(!(t.field in map)) map[t.field]=h;
+          break;
+        }
+      }
+    }
+  }
+  return map;
+}
+
+/* ---------- 值归一（与 Python 保持一致） ---------- */
+function parseDateJS(v){ if(v==null||v==='')return null; if(v instanceof Date) return v; const s=String(v).trim(); const m=s.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); return m?new Date(+m[1],+m[2]-1,+m[3]):null; }
+function parseGmvJS(v){ if(v==null||v==='')return 0; if(typeof v==='number')return v; const n=parseFloat(String(v).replace(/[^0-9.\-]/g,'')); return isNaN(n)?0:n; }
+function parseRentalJS(v){ if(v==null||v==='')return 0; const s=String(v); let d=0,m; if((m=s.match(/(\d+)\s*天/)))d+=+m[1]; if((m=s.match(/(\d+)\s*小时/)))d+=+m[1]/24; if((m=s.match(/(\d+)\s*分钟/)))d+=+m[1]/1440; return Math.round(d*10000)/10000; }
+function mapStatusJS(raw){ if(!SCHEMA)return raw; return SCHEMA.status_map[raw]!==undefined?SCHEMA.status_map[raw]:raw; }
+function simplifyModelJS(raw){
+  if(!raw)return ''; let s=String(raw).trim(); if(!s)return '';
+  if(SCHEMA){ for(const [pat,res] of SCHEMA.model_patterns){ if(new RegExp(pat,'i').test(s)) return res; } }
+  s=s.replace(/^\d+-/,'').replace(/\s*20\d{2}款.*$/,'').replace(/纯电动.*$/,'')
+       .replace(/磷酸铁锂.*$/,'').replace(/三元锂.*$/,'');
+  for(const p of ['广汽埃安','埃安','一汽','东风风行','东风风神','东风','吉利汽车','吉利','比亚迪','北汽新能源','北汽']){ if(s.startsWith(p)){ s=s.slice(p.length); break; } }
+  for(const kw of ['炫','魅','前驱','网约','鸿途','快换','乐享','AIR','精英','标准','豪华','行政','经典','出行','PLUS-R','Plus-R']){ const i=s.indexOf(kw); if(i>0) s=s.slice(0,i); }
+  s=s.replace(/-[A-Z]?\d+.*$/,'');
+  return s.trim()||'未知车型';
+}
+function getHolidayJS(dateStr){ if(!dateStr||!SCHEMA)return '非节假日'; for(const [n,s,e] of SCHEMA.holidays_2026){ if(dateStr>=s&&dateStr<=e) return n; } return '非节假日'; }
+/* 平台识别：基于各平台专属标识词（identify），不依赖文件名与标准列名。
+   命中专属词得分最高；无专属词时退化为「精确候选列命中数」；都为 0 则返回 null（通用解析）。 */
+/* 平台识别：基于各平台专属标识词（identify），不依赖文件名与标准列名。
+   专属词权重远高于通用列的精确候选命中数，避免被「下单时间/车型/租期」等共有列带偏。 */
+function detectPlatformJS(headers){
+  if(!SCHEMA) return null;
+  const nhs=headers.map(normHeader);
+  let best=null,bs=-1;
+  for(const [plat,cfg] of Object.entries(SCHEMA.platforms)){
+    let idHits=0;
+    for(const tok of (cfg.identify||[])){ if(nhs.some(h=>h.includes(normHeader(tok)))) idHits++; }
+    let exact=0;
+    for(const [f,cands] of Object.entries(cfg.columns||{})){
+      if(!Array.isArray(cands)) continue; // 跳过「城市映射」等字符串型字段
+      for(const cand of cands){ if(headers.includes(cand)){ exact++; break; } }
+    }
+    const sc=idHits*1000 + exact; // 专属标识词主导，精确候选仅作次级/兜底
+    if(sc>bs){ best=plat; bs=sc; }
+  }
+  return bs>0?best:null;
+}
+
+/* 解析单个 Excel → 统一订单数组（渠道/文件夹无关）
+   · 支持多 sheet；自动探测表头行（兼容标题行偏移、封面页）
+   · 表头用「精确候选 → 分词规则」解析，任意渠道列名变体都能命中
+   · 平台识别基于 identify 专属词；未命中则按「通用」尽力解析 */
+async function unifyWorkbook(file){
+  if(typeof XLSX==='undefined') return [];
+  const buf=await file.arrayBuffer();
+  const wb=XLSX.read(buf,{type:'array'});
+  const out=[];
+  for(const sn of wb.SheetNames){
+    const ws=wb.Sheets[sn];
+    const matrix=XLSX.utils.sheet_to_json(ws,{header:1,defval:null});
+    if(!matrix||matrix.length<2) continue;
+    // 在前 12 行里找「命中的统一字段分词」最多的行作为表头
+    let hdrIdx=-1,bestScore=0;
+    matrix.slice(0,12).forEach((row,i)=>{
+      const txt=row.map(c=>normHeader(c)).join(' ');
+      let score=0; for(const t of _tokenRules){ if(t.tokens.every(tok=>txt.includes(tok))) score++; }
+      if(score>bestScore){ bestScore=score; hdrIdx=i; }
+    });
+    if(hdrIdx<0||bestScore<2) continue; // 不是订单表，跳过该 sheet
+    const headers=matrix[hdrIdx].map(h=>String(h==null?'':h).trim());
+    const hmap=resolveHeaders(headers);
+    const plat=detectPlatformJS(headers);
+    const cfg=plat?SCHEMA.platforms[plat]:null;
+    const col=cfg?cfg.columns:{};
+    const cityMapName=col['城市映射'];
+    const cityMap=(cityMapName&&SCHEMA.city_maps[cityMapName])||null;
+    const rules=cfg?cfg.rules||{}:{};
+    const clearPickup=new Set(rules.clear_actual_pickup_on||[]);
+    const clearReturn=new Set(rules.clear_actual_return_on||[]);
+    const g=(r,field)=>{ const ah=hmap[field]; if(!ah) return null; const v=r[ah]; return (v==null||String(v).trim()==='')?null:v; };
+    for(let i=hdrIdx+1;i<matrix.length;i++){
+      const row=matrix[i];
+      if(!row||!row.some(c=>c!=null&&String(c).trim()!=='')) continue;
+      const r={}; headers.forEach((h,idx)=>r[h]=row[idx]);
+      const oid=String(g(r,'订单号')||'').trim(); if(!oid) continue;
+      const rawStatus=String(g(r,'订单状态')||'').trim();
+      const status=mapStatusJS(rawStatus);
+      let actualPickup=parseDateJS(g(r,'实际取车时间'));
+      let actualReturn=parseDateJS(g(r,'实际还车时间'));
+      if(clearPickup.has(rawStatus)) actualPickup=null;
+      if(clearReturn.has(rawStatus)) actualReturn=null;
+      const rawModel=g(r,'车型');
+      const rawCity=g(r,'城市列');
+      const city=cityMap?(cityMap[String(rawCity||'').trim()]||''):String(rawCity||'').trim();
+      const eventDateStr=fmtDateCell(actualPickup)||fmtDateCell(parseDateJS(g(r,'预计取车时间')));
+      const holiday=getHolidayJS(eventDateStr);
+      out.push({
+        订单号:oid, 下单时间:fmtDateCell(g(r,'下单时间')),
+        预计取车时间:fmtDateCell(g(r,'预计取车时间')), 实际取车时间:fmtDateCell(actualPickup),
+        预计还车时间:fmtDateCell(g(r,'预计还车时间')), 实际还车时间:fmtDateCell(actualReturn),
+        租期:parseRentalJS(g(r,'租期')), 是否节假日订单:holiday!=='非节假日'?'是':'否',
+        车型:String(rawModel||'').trim(), 车型统一:simplifyModelJS(rawModel),
+        城市:city, 订单金额:parseGmvJS(g(r,'订单金额')),
+        订单所属平台:plat||'通用', 订单状态:rawStatus, 订单状态统一:status,
+        车牌号:String(g(r,'车牌号')||'').trim()
+      });
+    }
+  }
+  return out;
+}
+
+/* 统一入口：支持多文件 / 整文件夹（原始 Excel / 归一化 Excel / JSON）
+   · 跨文件按「订单号」去重：导入重叠的文件夹/多份导出也不会重复计数
+   · 文件夹导入（webkitdirectory）也是走这里，按扩展名过滤 */
+async function handleFiles(files){
+  const list=[...files].filter(f=>/\.(xlsx|xls|json)$/i.test(f.name)); if(!list.length) return;
+  let merged=[], summary=[], jsonCount=0, skipped=[], errors=[], dupSkipped=0;
+  const seen=new Set(); // 本次导入批次内全局去重
+  const addRec=(rec,idKey)=>{
+    const id=String(rec[idKey]||'').trim(); if(!id) return false;
+    if(seen.has(id)){ dupSkipped++; return false; }
+    seen.add(id); merged.push(rec); return true;
+  };
+  for(const file of list){
+    const name=file.name.toLowerCase();
+    try{
+      if(name.endsWith('.json')){
+        const j=JSON.parse(await file.text());
+        const arr=Array.isArray(j)?j:(j.orders||[]);
+        let added=0; arr.forEach(o=>{ if(addRec(o, o.订单号!=null?'订单号':'order_id')) added++; });
+        jsonCount+=added; summary.push(file.name+'（JSON '+added+' 条）');
+      } else if(name.endsWith('.xlsx')||name.endsWith('.xls')){
+        if(typeof XLSX==='undefined'){ errors.push(file.name+'：表格解析库未加载（需联网），请联网后重试或改用 JSON'); continue; }
+        const recs=await unifyWorkbook(file);
+        let added=0; recs.forEach(r=>{ if(addRec(r,'订单号')) added++; });
+        if(!added){ skipped.push(file.name+'（未识别到已知平台订单表，已跳过）'); continue; }
+        const sliced=merged.slice(merged.length-added);
+        const byPlat={}; sliced.forEach(r=>byPlat[r.订单所属平台]=(byPlat[r.订单所属平台]||0)+1);
+        summary.push(file.name+'（'+(Object.entries(byPlat).map(([p,c])=>p+c+'单').join('、')||'未识别')+'）');
+      } else { errors.push(file.name+'：不支持的文件类型'); }
+    }catch(err){ errors.push(file.name+'：解析失败（'+((err&&err.message)||err)+'）'); }
+  }
+  const fr=document.getElementById('fileRow');
+  if(merged.length){
+    DATA=merged; initMonthSelect(); render();
+    const excelCount=merged.length-jsonCount;
+    let msg='已导入 '+merged.length+' 条（Excel '+excelCount+' + JSON '+jsonCount+'）'+(summary.length?'：'+summary.join('；'):'');
+    if(dupSkipped) msg+=' ｜ 跨文件去重跳过 '+dupSkipped+' 条重复';
+    if(skipped.length) msg+=' ｜ 跳过：'+skipped.join('；');
+    if(errors.length) msg+=' ｜ 注意：'+errors.join('；');
+    fr.style.color='#0ea5a4'; fr.textContent=msg;
+    scrollToSec('sec-order');
+  } else {
+    let msg='未导入任何数据。';
+    if(skipped.length) msg+=' 跳过：'+skipped.join('；');
+    if(errors.length) msg+=' 错误：'+errors.join('；');
+    if(!skipped.length && !errors.length) msg+=' 请确认文件为 .xlsx/.json，且包含哈啰/滴滴/悟空/携程订单。';
+    fr.style.color='#FB9C0D'; fr.textContent=msg;
+  }
+}
+function handleFile(file){ handleFiles([file]); }
 
 /* 拖拽 */
 const drop=document.getElementById('drop');
 ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('hover');}));
 ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('hover');}));
-drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
-document.getElementById('fileInput').addEventListener('change',e=>{ const f=e.target.files[0]; if(f) handleFile(f); });
+drop.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+document.getElementById('fileInput').addEventListener('change',e=>{ if(e.target.files.length) handleFiles(e.target.files); });
+document.getElementById('folderInput').addEventListener('change',e=>{ if(e.target.files.length) handleFiles(e.target.files); });
+document.getElementById('mapMetric').addEventListener('change',render);
+
+/* ---------- 地图缩放 / 平移：直接改 SVG 视图(viewBox)，矢量重投影，放大永不模糊 ---------- */
+const MAP_W=920, MAP_H=640;
+let _mapZ=1, _mapX=0, _mapY=0;          // 缩放倍数 + 视图左上角(viewBox 坐标)
+const _mapVp=document.getElementById('mapViewport');
+const _mapChart=document.getElementById('mapChart');
+function mapSyncView(){                  // 把当前缩放/平移写进 SVG 的 viewBox
+  const svg=_mapChart.querySelector('svg'); if(!svg) return;
+  const vbW=MAP_W/_mapZ, vbH=MAP_H/_mapZ;
+  _mapX=Math.max(0,Math.min(MAP_W-vbW,_mapX));   // 限制在底图范围内
+  _mapY=Math.max(0,Math.min(MAP_H-vbH,_mapY));
+  svg.setAttribute('viewBox',_mapX.toFixed(2)+' '+_mapY.toFixed(2)+' '+vbW.toFixed(2)+' '+vbH.toFixed(2));
+}
+function _resetMap(){ _mapZ=1; _mapX=0; _mapY=0; mapSyncView(); }
+_mapVp.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const svg=_mapChart.querySelector('svg'); if(!svg) return;
+  const rect=_mapVp.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const vbW=MAP_W/_mapZ, k=vbW/rect.width;        // viewBox 单位 / CSS 像素
+  const vbx=_mapX+mx*k, vby=_mapY+my*k;          // 光标处的地图坐标
+  const factor=e.deltaY<0?1.2:1/1.2;
+  _mapZ=Math.max(1,Math.min(16,_mapZ*factor));
+  const vbW2=MAP_W/_mapZ, k2=vbW2/rect.width;
+  _mapX=vbx-mx*k2; _mapY=vby-my*k2;              // 以光标为中心缩放
+  mapSyncView();
+},{passive:false});
+let _drag=false,_lx=0,_ly=0;
+_mapVp.addEventListener('pointerdown',e=>{ _drag=true; _lx=e.clientX; _ly=e.clientY; _mapVp.setPointerCapture(e.pointerId); });
+_mapVp.addEventListener('pointermove',e=>{ if(!_drag) return;
+  const rect=_mapVp.getBoundingClientRect();
+  const vbW=MAP_W/_mapZ, k=vbW/rect.width;
+  _mapX-=(e.clientX-_lx)*k; _mapY-=(e.clientY-_ly)*k; _lx=e.clientX; _ly=e.clientY; mapSyncView(); });
+_mapVp.addEventListener('pointerup',()=>{ _drag=false; });
+_mapVp.addEventListener('pointercancel',()=>{ _drag=false; });
+_mapVp.addEventListener('dblclick',_resetMap);
+document.getElementById('mapZoomIn').addEventListener('click',()=>{ _mapZ=Math.min(16,_mapZ*1.25); mapSyncView(); });
+document.getElementById('mapZoomOut').addEventListener('click',()=>{ _mapZ=Math.max(1,_mapZ/1.25); mapSyncView(); });
+document.getElementById('mapZoomReset').addEventListener('click',_resetMap);
 
 /* 导航高亮 */
 const navlinks=[...document.querySelectorAll('.nav-links a')];
@@ -488,6 +1118,7 @@ secs.forEach(s=>s&&obs.observe(s));
 navlinks.forEach(a=>a.addEventListener('click',()=>document.getElementById('navLinks').classList.remove('open')));
 
 /* 启动 */
+loadSchema();
 loadSample();
 </script>
 </body>
