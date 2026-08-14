@@ -334,7 +334,7 @@
   <section id="sec-import">
     <div class="eyebrow">Step 1</div>
     <h2 class="sec-title">导入数据</h2>
-    <p class="sec-sub">上传各平台后台下载的<b>原始订单 Excel</b>（哈啰 / 滴滴 / 悟空 / 携程，表头各不相同也没关系，系统按列特征自动识别平台并统一表头）；也支持已归一化的 .xlsx 或 .json。可一次选多个文件。或一键使用示例数据。</p>
+    <p class="sec-sub">上传各平台后台下载的<b>原始订单 Excel</b>；也支持已归一化的 .xlsx 或 .json。可一次选多个文件。或一键使用示例数据。</p>
     <div class="drop" id="drop">
       <h3>拖拽文件到此处，或点击选择</h3>
       <p>支持多平台原始 .xlsx（自动统一表头） / 归一化 .xlsx / .json（订单数组）</p>
@@ -435,17 +435,11 @@
   <section id="sec-map">
     <div class="eyebrow">Geo</div>
     <h2 class="sec-title">城市分布地图</h2>
-    <p class="sec-sub">所选月份各城市的订单与应收分布，复用参考项目展示方式：<b>平面地图 + 矩形柱状</b>展示。柱高 = 所选指标（订单数 / 应收 GMV），颜色按应收 GMV 由浅到深（灰→蓝→绿→橙）；柱顶标注「城市 · 订单数 · 应收」，悬停看明细。基于城市名自动定位，无需坐标列；未识别城市自动回退到所属省份中心。</p>
+    <p class="sec-sub">所选月份各城市的订单与应收分布，复用参考项目展示方式：<b>平面地图 + 矩形柱状</b>展示。柱高 = 订单数，颜色按应收 GMV 由浅到深（灰→青→绿→橙）；柱顶标注「城市 · 订单数 · 应收」，悬停看明细。基于城市名自动定位，无需坐标列；未识别城市自动回退到所属省份中心。</p>
     <div class="cards">
       <div class="chart-card full">
         <div class="map-head">
           <h3 id="mapTitle">城市订单 / 应收分布图</h3>
-          <label class="map-metric">柱高依据
-            <select id="mapMetric">
-              <option value="orders" selected>订单数</option>
-              <option value="gmv">应收 GMV</option>
-            </select>
-          </label>
         </div>
         <div class="map-viewport" id="mapViewport">
           <div id="mapChart"></div>
@@ -457,8 +451,8 @@
           <div class="map-hint">滚轮缩放 · 拖拽平移 · 双击复位</div>
         </div>
         <div class="legend">
-          <span>柱高 = 所选指标</span>
-          <span>颜色（灰→蓝→绿→橙）= 应收 GMV 由低到高</span>
+          <span>柱高 = 订单数</span>
+          <span>颜色（灰→青→绿→橙）= 应收 GMV 由低到高</span>
           <span id="mapCityCount"></span>
         </div>
         <div class="map-dist" id="mapDist"></div>
@@ -723,7 +717,7 @@ function initMapChart(){
   _mapInst.setOption({
     tooltip:{ trigger:'item', confine:true, formatter:p=>{ const v=p.value; if(!v||v.length<4) return (p.name||''); return '<b>'+(p.name||'')+'</b><br/>订单：'+v[2]+' 单<br/>应收：'+fmtMoney(v[3]); } },
     visualMap:{ show:true, min:0, max:1, dimension:3, seriesIndex:0,
-      inRange:{ color:['#94a3b8','#3B82F6','#069669','#F97216'] },
+      inRange:{ color:['#cbd5e1','#0EA5A4','#0FBA81','#FB9C0D'] },
       text:['高 GMV','低 GMV'], left:24, bottom:24, textStyle:{color:'#475569'}, calculable:true },
     geo:{ map:'china', roam:true, scaleLimit:{min:1,max:8},
       itemStyle:{ areaColor:'#f1f5f9', borderColor:'#cbd5e1', borderWidth:0.8 },
@@ -802,9 +796,8 @@ function render(){
   document.getElementById('platChart').innerHTML=svgHBars(M.topPlats,'platform','gmv',500,Math.max(140,M.topPlats.length*38),PALETTE);
   // 城市地图（平面柱状）
   const cityAgg=computeCityAgg(M.cur);
-  const mapMetric=document.getElementById('mapMetric').value;
   document.getElementById('mapTitle').textContent= (M.isAll?'全部月份':ym.replace('-','年')+'月')+' 城市订单 / 应收分布（柱状）';
-    renderMap(cityAgg,mapMetric);   // ECharts geo(2D)+custom 柱状：矢量缩放，刷新时保留视图
+    renderMap(cityAgg,'orders');   // ECharts geo(2D)+scatter 矩形柱状：矢量缩放，刷新时保留视图
 document.getElementById('mapCityCount').textContent='覆盖 '+cityAgg.length+' 个城市';
   document.getElementById('mapDist').innerHTML=renderMapDist(cityAgg);
   // 明细表
@@ -1089,7 +1082,6 @@ const drop=document.getElementById('drop');
 drop.addEventListener('drop',e=>{ if(e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
 document.getElementById('fileInput').addEventListener('change',e=>{ if(e.target.files.length) handleFiles(e.target.files); });
 document.getElementById('folderInput').addEventListener('change',e=>{ if(e.target.files.length) handleFiles(e.target.files); });
-document.getElementById('mapMetric').addEventListener('change',render);
 
 /* ---------- 地图缩放 / 平移：由 ECharts geo 原生漫游实现（滚轮缩放·拖拽平移·双击复位），矢量重投影，放大永不模糊 ---------- */
 function _mapZoom(factor){
